@@ -1,8 +1,8 @@
-local react = ug_require "/gui/main/react.lua"
-local builtin = ug_require "/gui/main/builtin.lua"
-local engine_react_util = ug_require "/gui/main/engine_react_util.tl"
-local game_bar_widgets = ug_require "/gui/game_bar/game_bar_widgets.tl"
-local lang_util = ug_require "/scripts/lang_util.tl"
+local react = ug_require "::/gui/main/react.lua"
+local builtin = ug_require "::/gui/main/builtin.lua"
+local engine_react_util = ug_require "::/gui/main/engine_react_util.tl"
+local game_bar_widgets = ug_require "::/gui/game_bar/game_bar_widgets.tl"
+local lang_util = ug_require "::/scripts/lang_util.tl"
 local preview = ug_require "pichau_competitor_ai::/ai/preview.lua"
 
 local function makeSnapshot()

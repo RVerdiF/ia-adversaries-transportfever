@@ -77,11 +77,11 @@ ug_require = function(path)
 	if path == "pichau_competitor_ai::/ai/preview.lua" then
 		return {createSession=function() return {render=function() return nil end} end}
 	end
-	if path == "/gui/main/react.lua" then return react end
-	if path == "/gui/main/builtin.lua" then return builtin end
-	if path == "/gui/main/engine_react_util.tl" then return engineReactUtil end
-	if path == "/gui/game_bar/game_bar_widgets.tl" then return gameBarWidgets end
-	if path == "/scripts/lang_util.tl" then return langUtil end
+	if path == "::/gui/main/react.lua" then return react end
+	if path == "::/gui/main/builtin.lua" then return builtin end
+	if path == "::/gui/main/engine_react_util.tl" then return engineReactUtil end
+	if path == "::/gui/game_bar/game_bar_widgets.tl" then return gameBarWidgets end
+	if path == "::/scripts/lang_util.tl" then return langUtil end
 	error("unexpected ug_require path: " .. tostring(path))
 end
 
