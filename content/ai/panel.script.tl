@@ -70,6 +70,10 @@ local CompetitorAIPanel = react.RegisterPluginRecipe(game_bar_widgets.GameBarInf
 			}
 			detailChildren[#detailChildren + 1] = builtin.TextView{
 				meta = { class = "font-scale-body" },
+				text = lang_util.format(_("Capital inicial: {capital}"), { capital = displayMoney(snapshot.initialCapital) }),
+			}
+			detailChildren[#detailChildren + 1] = builtin.TextView{
+				meta = { class = "font-scale-body" },
 				text = lang_util.format(_("Lucro mensal: {profit}"), { profit = displayMoney(snapshot.monthlyProfit) }),
 			}
 

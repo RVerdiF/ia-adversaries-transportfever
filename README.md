@@ -7,11 +7,11 @@ Mod independente para esta instalação do Transport Fever 3. Não altera os arq
 ## Ativar
 
 1. O pacote está em `mods/release/pichau_competitor_ai`, junto aos outros pacotes locais. A cópia portátil contém essa mesma pasta.
-2. Ativar **Empresa concorrente — Viação Horizonte** numa **partida livre nova**, com dinheiro finito e ano 1900 ou posterior. O depósito nativo começa em 1900.
+2. Ativar **Empresa concorrente — Viação Horizonte** numa **partida livre nova**, em qualquer nível de dinheiro, e ano 1900 ou posterior. O depósito nativo começa em 1900.
 3. Usar um mapa com pelo menos duas cidades conectadas por ruas públicas e espaço livre perto de pontas de rua para o depósito.
 4. Abrir **Rival +** na barra para acompanhar a empresa. A construção funciona também com esse painel recolhido.
 
-O mod cria uma empresa com nome/cor próprios e capital igual ao saldo inicial humano. O aporte ocorre uma única vez, na conta rival. Saves anteriores sem o mod não recebem uma rival automaticamente. Começar uma partida nova também é necessário para sair do bloqueio salvo pela versão 1 deste protótipo.
+O mod cria uma empresa com nome/cor próprios e capital inicial próprio, escolhido nas opções do mod (5, 10, 20 ou 50 milhões; padrão: 10 milhões). O aporte acontece uma única vez na conta rival e não é retirado do saldo do jogador; não há empréstimos automáticos. Saves que foram bloqueados apenas por terem saldo humano zero retomam a inicialização após atualizar o mod.
 
 ## Operação automática
 

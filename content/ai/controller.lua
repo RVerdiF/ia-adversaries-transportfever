@@ -1,7 +1,9 @@
 -- Simulation controller. Dependencies are injected to exercise recovery without
 -- the game and to keep API commands out of the decision policy.
 local controller = {}
-local VERSION = 1
+local VERSION = 2
+local DEFAULT_STARTING_CAPITAL = 10000000
+local OLD_NO_CAPITAL_REASON = "A rival exige uma partida com capital inicial finito e positivo"
 
 function controller.create(native, routes, policy)
     local ret = {}
@@ -66,15 +68,16 @@ function controller.create(native, routes, policy)
         if id ~= "" or name ~= "initNewGame" then return end
         local state = store:get() or {}
         if state.version then return end
-        local cash = native.balance(native.getPlayer())
+        local initialCapital = native.startingCapital and native.startingCapital() or DEFAULT_STARTING_CAPITAL
         state = {
             version = VERSION, companyName = "Viação Horizonte", phase = "create_player",
             status = "Inicializando", lastDecision = "Preparando empresa rival",
-            initialCapital = cash, routes = {}, blockedCandidates = {}, history = {},
+            initialCapital = initialCapital, routes = {}, blockedCandidates = {}, history = {},
             initializedAt = native.now(), compatibilityVerified = false,
         }
-        if type(cash) ~= "number" or cash ~= cash or cash <= 0 or cash == math.huge then
-            block(store, state, "A rival exige uma partida com capital inicial finito e positivo")
+        if type(initialCapital) ~= "number" or initialCapital ~= initialCapital
+            or initialCapital <= 0 or initialCapital == math.huge or initialCapital ~= math.floor(initialCapital) then
+            block(store, state, "Capital inicial da rival inválido")
         else
             if store.subscribeToEvent then
                 store:subscribeToEvent("pichauCompetitorPreviewStarted")
@@ -121,6 +124,17 @@ function controller.create(native, routes, policy)
         if not state.version then
             -- A script added to an existing save must not silently create a rival.
             return
+        end
+        if state.version == 1 then
+            state.version = VERSION
+            if state.phase == "blocked" and state.player == nil and state.lastDecision == OLD_NO_CAPITAL_REASON then
+                state.initialCapital = native.startingCapital and native.startingCapital() or DEFAULT_STARTING_CAPITAL
+                state.phase = "create_player"
+                state.status = "Inicializando"
+                state.pending = nil
+                state.lastDecision = "Retomando inicialização com o capital configurado no mod"
+            end
+            save(store, state)
         end
         if state.version ~= VERSION then block(store, state, "Versão de estado incompatível"); return end
         if state.phase == "blocked" or state.phase == "inactive" then return end

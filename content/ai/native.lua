@@ -1,6 +1,7 @@
 -- Thin adapter around APIs confirmed in the Transport Fever 3 API definitions
 -- and vanilla scripts. Keep decision policy outside this module.
 local native = {}
+local DEFAULT_STARTING_CAPITAL = 10000000
 
 local function finite(value)
 	return type(value) == "number" and value == value
@@ -22,6 +23,20 @@ function native.balance(playerEntity)
 		return nil
 	end
 	return api.engine.util.finance.getPlayersBalance(playerEntity)
+end
+
+function native.startingCapital()
+	local config = api.engine and api.engine.config
+	if not config or type(config.getModParams) ~= "function" then
+		return DEFAULT_STARTING_CAPITAL
+	end
+	local ok, allParams = pcall(config.getModParams)
+	local modParams = ok and type(allParams) == "table" and allParams.pichau_competitor_ai or nil
+	local amount = type(modParams) == "table" and modParams.startingCapital or nil
+	if not finite(amount) or amount <= 0 or amount ~= math.floor(amount) then
+		return DEFAULT_STARTING_CAPITAL
+	end
+	return amount
 end
 
 function native.now()

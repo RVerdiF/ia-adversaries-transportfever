@@ -12,7 +12,9 @@ local function harness(options)
 	local now = options.now or 0
 	local human = "human"
 	local rival = "rival"
-	local balances = { [human] = options.humanBalance or 20000, [rival] = options.rivalBalance or 0 }
+	local humanBalance = options.humanBalance
+	if humanBalance == nil then humanBalance = 20000 end
+	local balances = { [human] = humanBalance, [rival] = options.rivalBalance or 0 }
 	local store = { value = options.state }
 	function store:get() return self.value end
 	function store:set(value) self.value = value end
@@ -33,6 +35,7 @@ local function harness(options)
 		monthDuration = function() return 30 end,
 		getPlayer = function() return human end,
 		balance = function(player) return balances[player] end,
+		startingCapital = function() return options.startingCapital or 10000000 end,
 		newPlayer = function(_name, _color, callback)
 			counts.newPlayer = counts.newPlayer + 1
 			callback(rival)
@@ -113,12 +116,13 @@ local function update(h)
 	return h.store:get()
 end
 
--- New game setup creates and capitalizes once, retaining the human's cash.
+-- A zero-balance player still gets a separately funded rival account.
 do
-	local h = harness()
+	local h = harness({ humanBalance = 0 })
 	local state = initialize(h)
 	equal(state.phase, "create_player", "new game begins with rival creation")
 	local humanBefore = h.getBalance(h.human)
+	equal(state.initialCapital, 10000000, "rival uses configured starting capital")
 	update(h)
 	equal(h.store:get().phase, "fund", "player creation advances to funding")
 	equal(h.counts.newPlayer, 1, "creates one rival company")
@@ -127,7 +131,7 @@ do
 	equal(state.phase, "plan", "funding advances to planning")
 	equal(state.capitalized, true, "rival account capitalized")
 	equal(h.counts.fund, 1, "funds rival once")
-	equal(h.getBalance(h.rival), humanBefore, "rival receives starting capital")
+	equal(h.getBalance(h.rival), 10000000, "rival receives starting capital")
 	equal(h.getBalance(h.human), humanBefore, "human balance is unchanged")
 	h.controller.handleEvent(nil, h.store, nil, "", "initNewGame")
 	equal(h.counts.fund, 1, "duplicate init does not fund again")
