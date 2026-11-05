@@ -26,7 +26,7 @@ api = {
     end}),
 }
 log = {error=function() errors=errors+1 end}
-local script = dofile("content/ai/competitor.script.lua")
+local script = dofile("content/ai/competitor.script.tl")
 local store = {value={}}
 function store:get() return self.value end
 function store:set(value) self.value=value end

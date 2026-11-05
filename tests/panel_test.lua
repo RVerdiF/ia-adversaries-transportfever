@@ -109,7 +109,7 @@ api = {
 	type = { ComponentType = { GAME_SCRIPT = "GAME_SCRIPT" } },
 }
 
-local panel = dofile("content/ai/panel.script.lua")
+local panel = dofile("content/ai/panel.script.tl")
 assert(registeredRecipe and registeredRecipe.name == "CompetitorAIPanel")
 assert(panel.CompetitorAIPanel == registeredRecipe.recipe)
 

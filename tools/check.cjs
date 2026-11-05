@@ -8,7 +8,7 @@ function walk(dir) {
   for (const entry of fs.readdirSync(dir, {withFileTypes: true})) {
     const name = path.join(dir, entry.name);
     if (entry.isDirectory()) walk(name);
-    else if (entry.name.endsWith('.lua')) files.push(name);
+    else if (entry.name.endsWith('.lua') || entry.name.endsWith('.tl')) files.push(name);
   }
 }
 walk(path.join(root, 'content'));
