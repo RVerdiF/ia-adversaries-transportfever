@@ -1,0 +1,6 @@
+[2026-11-05 20:42:59Z - MESSAGE  - Main             - UpdateBaseFileS]  new ModHubMod was installed and will be added to filesystem pichau_competitor_ai: modHubId=BuiltInMods,release/pichau_competitor_ai (source: BuiltInMods)
+[2026-11-05 20:42:59Z - MESSAGE  - Main             - UpdateBaseFileS]  Reading content cache from json for dir 'mods/release/pichau_competitor_ai/content/'
+[2026-11-05 20:43:03Z - MESSAGE  - Main             - UpdateBaseFileS]  installed ModHubMod was updated and will be re-added to filesystem pichau_competitor_ai: (source: BuiltInMods) updated modHubId: BuiltInMods,release/pichau_competitor_ai -> BuiltInMods,release/pichau_competitor_ai, runtimeRevision : 1 -> 2
+[2026-11-05 20:43:03Z - MESSAGE  - Main             - UpdateBaseFileS]  Reading content cache from json for dir 'mods/release/pichau_competitor_ai/content/'
+[2026-11-05 20:43:10Z - MESSAGE  - Main Thread      - Main           ]  Main menu is ready
+[2026-11-05 20:43:27Z - MESSAGE  - Main Thread      - Main           ]  Normal shutdown. Bye!

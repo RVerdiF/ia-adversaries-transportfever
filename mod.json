@@ -1,0 +1,12 @@
+{
+    "modId": "pichau_competitor_ai",
+    "revision": 2,
+    "cosmetic": false,
+    "visible": true,
+    "dependencies": null,
+    "incompatibilities": null,
+    "options": null,
+    "params": null,
+    "severityAdd": "Warning",
+    "severityRemove": "Critical"
+}

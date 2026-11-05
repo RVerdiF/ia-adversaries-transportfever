@@ -1,0 +1,16 @@
+{
+    "archives": null,
+    "files": [
+        "ai/competitor.gs.lua",
+        "ai/competitor.script.lua",
+        "ai/controller.lua",
+        "ai/construction.lua",
+        "ai/native.lua",
+        "ai/panel.res.lua",
+        "ai/panel.script.lua",
+        "ai/policy.lua",
+        "ai/planner.lua",
+        "ai/preview.lua",
+        "ai/routes.lua"
+    ]
+}

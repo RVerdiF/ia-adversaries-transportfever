@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "fengari-node-cli": "^0.1.0",
+    "luaparse": "^0.3.1"
+  }
+}
