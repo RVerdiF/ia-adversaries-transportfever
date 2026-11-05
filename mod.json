@@ -14,7 +14,7 @@
             "tooltip": "Saldo único disponível para a Viação Horizonte no início da partida. Não é retirado da conta do jogador.",
             "uiType": "ComboBox",
             "values": ["5 milhões", "10 milhões", "20 milhões", "50 milhões"],
-            "numbers": [5000000, 10000000, 20000000, 50000000],
+            "numbers": [5000000.0, 10000000.0, 20000000.0, 50000000.0],
             "yearFrom": 0,
             "yearTo": 0
         }
