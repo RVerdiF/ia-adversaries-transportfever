@@ -103,9 +103,10 @@ function native.fundToBalance(playerEntity, targetBalance)
 	entry.amount = delta
 	entry.time = -1
 	if delta > 0 then
-		entry.category.type = api.type.JournalEntry.Type.INCOME
+		entry.category.type = api.type.JournalEntry.Type.SUBSIDY
 	else
 		entry.category.type = api.type.JournalEntry.Type.OTHER
+		entry.category.other = api.type.JournalEntry.Other.OTHER
 	end
 
 	local command = api.cmd.makeJournalBookAssetCmd(
@@ -115,9 +116,10 @@ function native.fundToBalance(playerEntity, targetBalance)
 	)
 	local ok, err = pcall(api.cmd.sendCommand, command)
 	if not ok then return false, "journal_command_failed:" .. tostring(err), native.balance(playerEntity) end
+	-- Do not infer success from sendCommand returning without an exception.
+	-- Keep the pending marker until the account confirms the exact amount.
 	local updatedBalance = native.balance(playerEntity)
-	if updatedBalance ~= targetBalance then return false, "balance_did_not_reach_target", updatedBalance end
-	return true, nil, updatedBalance
+	return true, nil, updatedBalance == targetBalance and updatedBalance or nil
 end
 
 function native.ownedEntities(playerEntity, componentType)

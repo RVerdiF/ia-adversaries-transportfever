@@ -55,7 +55,7 @@ api.type.ComponentType.VEHICLE_DEPOT="depot"
 api.type.Line={new=function() return {} end,Stop={new=function() return {} end}}
 api.type.StationTerminal={new=function() return {} end}
 api.type.Vec3f={new=function(x,y,z) return {x=x,y=y,z=z} end}
-api.type.JournalEntry={new=function() return {category={}} end,Type={INCOME="income",OTHER="other"}}
+api.type.JournalEntry={new=function() return {category={}} end,Type={SUBSIDY="subsidy",OTHER="other"},Other={OTHER="other_booking"}}
 api.type.enum={TransportMode={BUS="bus"}}
 api.engine.getRevision=function() return {num={1,2}} end
 api.engine.util.pathfinding={findPathNodeToNode=function() return {} end}
@@ -82,7 +82,7 @@ api.cmd.makeGameAddPlayerCmd=function(name,color)
     return {kind="create"}
 end
 api.cmd.makeJournalBookAssetCmd=function(player,entry)
-    assert(player==2 and entry.category.type=="income")
+    assert(player==2 and entry.category.type=="subsidy")
     return {kind="fund",player=player,amount=entry.amount}
 end
 api.cmd.sendCommand=function(command,...)

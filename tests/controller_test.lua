@@ -22,6 +22,7 @@ local function harness(options)
 
 	local counts = { newPlayer = 0, fund = 0, build = 0, scan = 0, manage = 0, readiness = 0 }
 	local proofAvailable = false
+	local queuedFunding
 	local route = {
 		key = "route-key",
 		name = "Linha Centro",
@@ -50,6 +51,7 @@ local function harness(options)
 		fundToBalance = function(player, amount)
 			counts.fund = counts.fund + 1
 			if options.uncertainFund then return true end
+			if options.delayedFund then queuedFunding = { player = player, amount = amount }; return true end
 			balances[player] = amount
 			if options.changeHumanDuringFund then balances[human] = balances[human] - 1 end
 			return true, nil, balances[player]
@@ -75,6 +77,11 @@ local function harness(options)
 		setNow = function(value) now = value end,
 		setProof = function(value) proofAvailable = value end,
 		getBalance = function(player) return balances[player] end,
+		settleFund = function()
+			assert(queuedFunding, "funding must be queued")
+			balances[queuedFunding.player] = queuedFunding.amount
+			queuedFunding = nil
+		end,
 		counts = counts,
 		store = store,
 	}
@@ -147,6 +154,33 @@ do
 	equal(h.counts.fund, 1, "duplicate init does not fund again")
 	update(h)
 	equal(h.counts.fund, 1, "later updates do not fund again")
+end
+
+do
+	local h = harness({ delayedFund = true })
+	initialize(h)
+	update(h) -- create
+	update(h) -- discover rival
+	local state = update(h) -- submit journal command
+	equal(state.pending, "fund", "delayed journal keeps its marker")
+	state = update(h)
+	equal(state.phase, "fund", "unchanged account waits for settlement")
+	equal(h.counts.fund, 1, "waiting does not send another deposit")
+	h.native.settleFund()
+	state = update(h)
+	equal(state.phase, "plan", "settled journal resumes planning")
+	equal(h.counts.fund, 1, "settlement does not duplicate deposit")
+end
+
+do
+	local h = harness({ rivalBalance = 10000000, state = {
+		version=2, phase="blocked", player="rival", companyName="Viação Horizonte",
+		initialCapital=10000000, humanBalanceBeforeFunding=20000,
+		lastDecision="balance_did_not_reach_target", routes={}, blockedCandidates={}, history={}
+	} })
+	local state = update(h)
+	equal(state.phase, "plan", "old blocked funding is reconciled from actual balance")
+	equal(h.counts.fund, 0, "old funding recovery never redeposits")
 end
 
 -- Pending bootstrap markers reconcile observed effects and never replay commands.

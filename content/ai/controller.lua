@@ -178,8 +178,30 @@ function controller.create(native, routes, policy)
                 state.status = "Procurando rota"
                 remember(state, "Capital inicial confirmada na conta rival")
                 save(store, state)
+            elseif state.fundSentAt ~= nil and balance == state.fundBalanceBefore
+                and humanBalance == state.humanBalanceBeforeFunding
+                and native.now() - state.fundSentAt < native.monthDuration() / 4 then
+                state.status = "Aguardando registro do capital"
+                save(store, state)
+                return
             else
                 block(store, state, "Capitalização enviada sem confirmação; não será repetida automaticamente")
+                return
+            end
+        elseif state.version == VERSION and state.phase == "blocked" and state.player ~= nil
+            and state.lastDecision == "balance_did_not_reach_target" then
+            -- Older revisions sent the journal command, then checked the balance
+            -- before the engine applied it. Reconcile without another deposit.
+            local balance = native.balance(state.player)
+            local humanBalance = native.balance(native.getPlayer())
+            if balance == state.initialCapital and state.humanBalanceBeforeFunding ~= nil
+                and humanBalance == state.humanBalanceBeforeFunding then
+                state.balance, state.capitalized, state.phase = balance, true, "plan"
+                state.humanBalanceBeforeFunding = nil
+                state.status = "Procurando rota"
+                remember(state, "Capital anterior confirmado na conta rival")
+                save(store, state)
+            else
                 return
             end
         elseif state.version == VERSION and state.phase == "blocked" and state.player == nil
@@ -246,7 +268,10 @@ function controller.create(native, routes, policy)
         if state.phase == "fund" then
             if state.capitalized then state.phase = "plan"; save(store, state); return end
             local humanBefore = native.balance(native.getPlayer())
+            local rivalBefore = native.balance(state.player)
             state.humanBalanceBeforeFunding = humanBefore
+            state.fundBalanceBefore = rivalBefore
+            state.fundSentAt = native.now()
             state.pending = "fund"; save(store, state)
             local ok, err, balance = native.fundToBalance(state.player, state.initialCapital)
             if not ok then block(store, state, err); return end

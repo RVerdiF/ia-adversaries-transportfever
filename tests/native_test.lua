@@ -12,7 +12,7 @@ local players, accounts = { [1] = true, [2] = true }, { [1] = 700, [2] = 300 }
 local playerNames = { [1] = "Player", [2] = "Rival" }
 local owners, journalCommands = { [41] = 2, [42] = 2, [43] = 1 }, {}
 local maintenanceCosts = { [41] = 1200, [61] = 60 }
-local sendSuccess, nextPlayer, lastColor = true, 3, nil
+local sendSuccess, applyJournal, nextPlayer, lastColor = true, true, 3, nil
 local routeVehicles, failRouteFinance = { 41 }, false
 local C = { PLAYER = "PLAYER", GAME_TIME = "GAME_TIME", TRANSPORT_VEHICLE = "TRANSPORT_VEHICLE",
 	LINE = "LINE", PLAYER_OWNED = "PLAYER_OWNED", STATION_GROUP = "STATION_GROUP",
@@ -46,7 +46,7 @@ api = {
 		["enum"] = { Carrier = { ROAD = "ROAD", RAIL = "RAIL" }, TransportMode = { BUS = "BUS", TRUCK = "TRUCK" } },
 		Vec3f = { new = function(x, y, z) return { x = x, y = y, z = z } end },
 		JournalEntry = {
-			Type = { INCOME = "INCOME", OTHER = "OTHER" },
+			Type = { SUBSIDY = "SUBSIDY", OTHER = "OTHER" }, Other = { OTHER = "OTHER_BOOKING" },
 			Maintenance = { VEHICLE = "VEHICLE", INFRASTRUCTURE = "INFRASTRUCTURE", OTHER = "OTHER_MAINT",
 				VEHICLE_MAINTENANCE = "VEHICLE_MAINTENANCE" },
 			new = function() return { category = {} } end,
@@ -78,7 +78,7 @@ api = {
 				players[entity], accounts[entity], playerNames[entity] = true, 0, command.name
 			elseif command.kind == "journal" then
 				journalCommands[#journalCommands + 1] = command
-				accounts[command.playerEntity] = accounts[command.playerEntity] + command.entry.amount
+				if applyJournal then accounts[command.playerEntity] = accounts[command.playerEntity] + command.entry.amount end
 			end
 		end,
 	},
@@ -189,7 +189,7 @@ eq(funded, true, "fund command succeeds"); eq(fundingError, nil, "fund error")
 eq(fundedBalance, 1000, "confirmed balance"); eq(accounts[2], 1000, "target balance reached")
 eq(journalCommands[1].playerEntity, 2, "journal targets rival")
 eq(journalCommands[1].entry.amount, 700, "journal uses balance delta")
-eq(journalCommands[1].entry.category.type, "INCOME", "positive entry category")
+eq(journalCommands[1].entry.category.type, "SUBSIDY", "positive entry uses vanilla subsidy category")
 local count = #journalCommands
 funded = native.fundToBalance(2, 1000)
 eq(funded, true, "repeat funding succeeds without change"); eq(#journalCommands, count, "repeat does not journal")
@@ -197,6 +197,7 @@ funded = native.fundToBalance(2, 400)
 eq(funded, true, "exact target reduction"); eq(accounts[2], 400, "reduced target reached")
 eq(journalCommands[#journalCommands].entry.amount, -600, "negative delta")
 eq(journalCommands[#journalCommands].entry.category.type, "OTHER", "negative entry category")
+eq(journalCommands[#journalCommands].entry.category.other, "OTHER_BOOKING", "other booking has required subcategory")
 
 funded, fundingError = native.fundToBalance(1, 900)
 eq(funded, false, "human account mutation refused"); eq(fundingError, "refusing_local_player_funding", "human refusal reason")
@@ -210,6 +211,13 @@ funded, fundingError = native.fundToBalance(2, 500)
 eq(funded, false, "journal failure reported")
 assert(fundingError:find("journal_command_failed:", 1, true) == 1, "journal failure reason")
 eq(accounts[2], 400, "failed command does not mutate balance"); sendSuccess = true
+applyJournal = false
+funded, fundingError, fundedBalance = native.fundToBalance(2, 500)
+eq(funded, true, "unconfirmed command remains pending")
+eq(fundingError, nil, "unconfirmed command is not treated as a Lua failure")
+eq(fundedBalance, nil, "unconfirmed balance is not reported as funded")
+eq(accounts[2], 400, "unconfirmed command did not change account")
+applyJournal = true
 
 eq(#native.ownedVehicles(2), 2, "owned vehicle filter")
 eq(#native.ownedLines(2), 2, "owned line filter")
