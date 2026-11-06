@@ -143,7 +143,7 @@ api = {
 		getEntitiesWithComponent = function(componentType, filters)
 			local result = {}
 			if componentType == C.PLAYER then
-				for entity in pairs(players) do result[#result + 1] = entity end
+				error("Cannot loop over this component type")
 			elseif componentType == C.TRANSPORT_VEHICLE or componentType == C.LINE then
 				for entity, owner in pairs(owners) do
 					if owner == filters.requireOwnedByPlayer then result[#result + 1] = entity end
@@ -152,6 +152,11 @@ api = {
 				for entity in pairs(maintenanceCosts) do if entity ~= 41 and filters.requireOwnedByPlayer == 2 then result[#result + 1] = entity end end
 			end
 			table.sort(result); return result
+		end,
+		forEachEntity = function(callback)
+			for _, entity in ipairs({ 1, 2, 3, 41, 42, 43, 60, 61, 99 }) do
+				if players[entity] or entity ~= 3 then callback(entity) end
+			end
 		end,
 	},
 }

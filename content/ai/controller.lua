@@ -184,8 +184,9 @@ function controller.create(native, routes, policy)
             end
         elseif state.version == VERSION and state.phase == "blocked" and state.player == nil
             and state.pending == nil and state.lastDecision
-            and tostring(state.lastDecision):find("Callbacks are currently disallowed", 1, true) then
-            -- Upgrade path for saves blocked by the former callback based bootstrap.
+            and (tostring(state.lastDecision):find("Callbacks are currently disallowed", 1, true)
+                or tostring(state.lastDecision):find("Cannot loop over this component type", 1, true)) then
+            -- Upgrade path for saves blocked by former bootstrap API mistakes.
             state.phase, state.status = "create_player", "Recuperando empresa rival"
             state.lastDecision = "Verificando se a empresa já foi criada"
             save(store, state)

@@ -63,13 +63,16 @@ api.engine.util.finance.getPlayersBalance=function(player) return cash[player] e
 local names={[1]="Human"}
 api.engine.util.getEntityName=function(entity) return names[entity] end
 api.engine.getEntitiesWithComponent=function(kind)
-    if kind=="player" then
-        local entities={}
-        for entity in pairs(names) do entities[#entities+1]=entity end
-        table.sort(entities)
-        return entities
-    end
+    if kind=="player" then error("Cannot loop over this component type") end
     return {}
+end
+api.engine.forEachEntity=function(callback)
+    for entity in pairs(names) do callback(entity) end
+end
+local originalGetComponent=api.engine.getComponent
+api.engine.getComponent=function(entity,kind)
+    if kind=="player" and names[entity] then return {} end
+    return originalGetComponent(entity,kind)
 end
 api.engine.system={lineSystem={getLinesForPlayer=function() return {} end},
     transportVehicleSystem={getDepotVehicles=function() return {} end}}

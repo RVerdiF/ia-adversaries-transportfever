@@ -151,6 +151,14 @@ end
 
 -- Pending bootstrap markers reconcile observed effects and never replay commands.
 do
+	local h = harness({ state = { version=2, phase="blocked", status="Erro do script",
+		companyName="Viação Horizonte", initialCapital=10000000, routes={}, blockedCandidates={}, history={},
+		lastDecision="native.lua:53: Cannot loop over this component type" } })
+	local state = update(h)
+	equal(state.phase, "create_player", "old PLAYER enumeration error resumes bootstrap")
+	equal(h.counts.newPlayer, 1, "recovery issues only one creation command")
+end
+do
 	local h = harness({ uncertainCreate = true })
 	initialize(h)
 	update(h)

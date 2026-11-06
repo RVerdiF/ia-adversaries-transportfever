@@ -50,9 +50,14 @@ end
 function native.playersNamed(name)
 	local matches = {}
 	if type(name) ~= "string" then return matches end
-	for _, entity in ipairs(api.engine.getEntitiesWithComponent(api.type.ComponentType.PLAYER)) do
-		if api.engine.util.getEntityName(entity) == name then matches[#matches + 1] = entity end
-	end
+	-- PLAYER is readable on an entity but cannot be used as a loop index by
+	-- the engine. Enumerate entities instead, then inspect that component.
+	api.engine.forEachEntity(function(entity)
+		if api.engine.getComponent(entity, api.type.ComponentType.PLAYER)
+			and api.engine.util.getEntityName(entity) == name then
+			matches[#matches + 1] = entity
+		end
+	end)
 	table.sort(matches)
 	return matches
 end
