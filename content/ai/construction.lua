@@ -35,31 +35,30 @@ local function sameRevision(current, expected)
 	return current == expected
 end
 local function stationGroupForStation(player, stationEntity)
-	if api.engine.getEntitiesWithComponent == nil then return nil end
-	local groups = api.engine.getEntitiesWithComponent(api.type.ComponentType.STATION_GROUP, {
-		requireOwnedByPlayer = player,
-	}) or {}
-	for _, groupEntity in ipairs(groups) do
-		local group = component(groupEntity, api.type.ComponentType.STATION_GROUP)
-		local contains, mixedOwnership = false, false
-		for _, member in ipairs(group and group.stations or {}) do
-			if member == stationEntity then contains = true end
-			local ownership = component(member, api.type.ComponentType.PLAYER_OWNED)
-			if not ownership then
-				local connector = api.engine.system and api.engine.system.streetConnectorSystem
-				local callback = connector and connector.getConstructionEntityForStation
-				if callback ~= nil then
-					local ok, parent = pcall(callback, member)
-					if ok and type(parent) == "number" and parent >= 0 then
-						ownership = component(parent, api.type.ComponentType.PLAYER_OWNED)
-					end
+	local systems = api.engine.system
+	local stationGroups = systems and systems.stationGroupSystem
+	local getGroup = stationGroups and stationGroups.getStationGroup
+	if type(getGroup) ~= "function" then return nil end
+	local ok, groupEntity = pcall(getGroup, stationEntity)
+	if not ok or type(groupEntity) ~= "number" or groupEntity < 0
+		or not ownedBy(groupEntity, player) then return nil end
+	local group = component(groupEntity, api.type.ComponentType.STATION_GROUP)
+	if not group then return nil end
+	for _, member in ipairs(group.stations or {}) do
+		local ownership = component(member, api.type.ComponentType.PLAYER_OWNED)
+		if not ownership then
+			local connector = systems.streetConnectorSystem
+			local callback = connector and connector.getConstructionEntityForStation
+			if callback ~= nil then
+				local parentOk, parent = pcall(callback, member)
+				if parentOk and type(parent) == "number" and parent >= 0 then
+					ownership = component(parent, api.type.ComponentType.PLAYER_OWNED)
 				end
 			end
-			if ownership and ownership.player ~= player then mixedOwnership = true; break end
 		end
-		if contains and not mixedOwnership then return groupEntity end
+		if ownership and ownership.player ~= player then return nil end
 	end
-	return nil
+	return groupEntity
 end
 local function edgeCurrent(intent)
 	if intent.kind ~= "stop" then return true end

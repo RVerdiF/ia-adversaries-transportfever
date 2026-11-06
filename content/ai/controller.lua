@@ -101,7 +101,7 @@ function controller.create(native, routes, policy)
     end
 
     local function refresh(state)
-        local snapshot = native.snapshot(state.player)
+        local snapshot = native.snapshot(state.player, state.routes)
         if not snapshot then return false end
         state.balance = snapshot.balance
         state.monthlyCost = snapshot.monthlyCost or (snapshot.annualRunningCost or 0) / 12
@@ -189,12 +189,22 @@ function controller.create(native, routes, policy)
                 return
             end
         elseif state.version == VERSION and state.phase == "blocked" and state.player ~= nil
-            and state.lastDecision == "balance_did_not_reach_target" then
-            -- Older revisions sent the journal command, then checked the balance
-            -- before the engine applied it. Reconcile without another deposit.
+            and state.lastDecision and (state.lastDecision == "balance_did_not_reach_target"
+                or tostring(state.lastDecision):find("Cannot loop over this component type", 1, true)) then
+            -- Recover after confirming old bootstrap state or a component query
+            -- that this revision replaces with supported system queries.
             local balance = native.balance(state.player)
             local humanBalance = native.balance(native.getPlayer())
-            if balance == state.initialCapital and state.humanBalanceBeforeFunding ~= nil
+            if state.capitalized and balance == state.initialCapital then
+                local resumePhase = state.operation and "build"
+                    or state.management and "manage"
+                    or #((state.routes) or {}) > 0 and "operate"
+                    or "plan"
+                state.balance, state.phase = balance, resumePhase
+                state.status = "Retomando planejamento da rival"
+                state.lastDecision = "Consulta de custos atualizada"
+                save(store, state)
+            elseif balance == state.initialCapital and state.humanBalanceBeforeFunding ~= nil
                 and humanBalance == state.humanBalanceBeforeFunding then
                 state.balance, state.capitalized, state.phase = balance, true, "plan"
                 state.humanBalanceBeforeFunding = nil

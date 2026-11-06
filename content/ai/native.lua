@@ -136,10 +136,14 @@ function native.ownedVehicles(playerEntity)
 end
 
 function native.ownedLines(playerEntity)
-	return native.ownedEntities(playerEntity, api.type.ComponentType.LINE)
+	if type(playerEntity) ~= "number" then return {} end
+	local system = api.engine.system and api.engine.system.lineSystem
+	if not system or not system.getLinesForPlayer then return {} end
+	local ok, lines = pcall(system.getLinesForPlayer, playerEntity)
+	return ok and type(lines) == "table" and lines or {}
 end
 
-function native.snapshot(playerEntity)
+function native.snapshot(playerEntity, routes)
 	if type(playerEntity) ~= "number"
 		or not api.engine.entityExists(playerEntity)
 		or not api.engine.getComponent(playerEntity, api.type.ComponentType.PLAYER) then
@@ -159,16 +163,29 @@ function native.snapshot(playerEntity)
 		end
 	end
 	local annualInfrastructureCost = 0
-	for _, entity in ipairs(native.ownedEntities(playerEntity, api.type.ComponentType.MAINTENANCE_COST)) do
-		local maintenance = api.engine.getComponent(entity, api.type.ComponentType.MAINTENANCE_COST)
-		if not vehicleIds[entity] and maintenance and finite(maintenance.maintenanceCost) then
-			annualInfrastructureCost = annualInfrastructureCost + maintenance.maintenanceCost
+	local infrastructureEntities = {}
+	for _, route in ipairs(routes or {}) do
+		for _, entity in ipairs(route.infrastructure or {}) do infrastructureEntities[entity] = true end
+	end
+	-- Infrastructure built for lines is referenced through line stops and the
+	-- route records. Inspect those known entities instead of iterating component
+	-- types the engine refuses to enumerate (LINE, STATION_GROUP, etc.).
+	for _, lineEntity in ipairs(lines) do
+		local line = api.engine.getComponent(lineEntity, api.type.ComponentType.LINE)
+		for _, stop in ipairs(line and line.stops or {}) do
+			if stop.stationGroup ~= nil then infrastructureEntities[stop.stationGroup] = true end
 		end
 	end
-	for _, entity in ipairs(native.ownedEntities(playerEntity, api.type.ComponentType.STATION_GROUP)) do
-		if not api.engine.getComponent(entity, api.type.ComponentType.MAINTENANCE_COST) then
-			local cost = api.engine.util.maintenance.calcMaintenanceForStationGroup(entity)
-			if finite(cost) and cost > 0 then annualInfrastructureCost = annualInfrastructureCost + cost end
+	for entity in pairs(infrastructureEntities) do
+		local ownership = api.engine.getComponent(entity, api.type.ComponentType.PLAYER_OWNED)
+		if not vehicleIds[entity] and ownership and ownership.player == playerEntity then
+			local maintenance = api.engine.getComponent(entity, api.type.ComponentType.MAINTENANCE_COST)
+			if maintenance and finite(maintenance.maintenanceCost) then
+				annualInfrastructureCost = annualInfrastructureCost + maintenance.maintenanceCost
+			elseif api.engine.getComponent(entity, api.type.ComponentType.STATION_GROUP) then
+				local cost = api.engine.util.maintenance.calcMaintenanceForStationGroup(entity)
+				if finite(cost) and cost > 0 then annualInfrastructureCost = annualInfrastructureCost + cost end
+			end
 		end
 	end
 
