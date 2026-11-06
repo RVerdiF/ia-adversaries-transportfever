@@ -2,6 +2,9 @@
 -- and vanilla scripts. Keep decision policy outside this module.
 local native = {}
 local DEFAULT_STARTING_CAPITAL = 10000000
+-- getModParams returns the selected ScriptParam index, not its number value.
+-- Keep this order aligned with mod.json's startingCapital numbers array.
+local STARTING_CAPITAL_BY_INDEX = { 5000000, 10000000, 20000000, 50000000 }
 
 local function finite(value)
 	return type(value) == "number" and value == value
@@ -32,11 +35,12 @@ function native.startingCapital()
 	end
 	local ok, allParams = pcall(config.getModParams)
 	local modParams = ok and type(allParams) == "table" and allParams.pichau_competitor_ai or nil
-	local amount = type(modParams) == "table" and modParams.startingCapital or nil
-	if not finite(amount) or amount <= 0 or amount ~= math.floor(amount) then
+	local index = type(modParams) == "table" and modParams.startingCapital or nil
+	if not finite(index) or index ~= math.floor(index)
+		or index < 1 or index > #STARTING_CAPITAL_BY_INDEX then
 		return DEFAULT_STARTING_CAPITAL
 	end
-	return amount
+	return STARTING_CAPITAL_BY_INDEX[index]
 end
 
 function native.now()

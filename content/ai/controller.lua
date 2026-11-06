@@ -4,14 +4,17 @@ local controller = {}
 local VERSION = 2
 local DEFAULT_STARTING_CAPITAL = 10000000
 local OLD_NO_CAPITAL_REASON = "A rival exige uma partida com capital inicial finito e positivo"
+local READINESS_VERSION = 1
+local OLD_READINESS_REASON = "APIs necessárias para planejar, pré-visualizar ou conectar a rota indisponíveis."
 
 function controller.create(native, routes, policy)
     local ret = {}
     local function save(store, state) store:set(state) end
-    local function block(store, state, reason)
+    local function block(store, state, reason, category)
         state.phase = "blocked"
         state.status = "Integração interrompida"
         state.lastDecision = tostring(reason)
+        state.blockedReasonCategory = category
         state.pending = nil
         save(store, state)
     end
@@ -146,7 +149,25 @@ function controller.create(native, routes, policy)
             save(store, state)
         end
         if state.version ~= VERSION then block(store, state, "Versão de estado incompatível"); return end
-        if state.phase == "blocked" or state.phase == "inactive" then return end
+        if state.phase == "blocked" then
+            local oldReadinessBlock = state.blockedReasonCategory == nil
+                and state.player == nil and state.pending == nil and state.operation == nil
+                and state.lastDecision == OLD_READINESS_REASON
+            local retryReadiness = state.blockedReasonCategory == "readiness" or oldReadinessBlock
+            if retryReadiness and state.player == nil and state.pending == nil
+                and state.operation == nil and state.readinessVersion ~= READINESS_VERSION then
+                state.readinessVersion = READINESS_VERSION
+                state.blockedReasonCategory = nil
+                state.phase = "create_player"
+                state.status = "Validando integração"
+                state.lastDecision = "Revalidando APIs de rota após atualização"
+                state.initialCapital = native.startingCapital and native.startingCapital() or DEFAULT_STARTING_CAPITAL
+                save(store, state)
+            else
+                return
+            end
+        end
+        if state.phase == "inactive" then return end
         if state.pending then
             -- All commands execute synchronously in engine state. A saved pending
             -- marker means interrupted/unknown completion; never replay a purchase.
@@ -157,7 +178,10 @@ function controller.create(native, routes, policy)
             if routes.readiness then
                 local readiness = routes.readiness()
                 if not readiness or not readiness.automaticPlacement then
-                    block(store, state, readiness and (readiness.message or readiness.reason) or "Construção automática não validada")
+                    state.readinessVersion = READINESS_VERSION
+                    block(store, state,
+                        readiness and (readiness.message or readiness.reason) or "Construção automática não validada",
+                        "readiness")
                     return
                 end
             end

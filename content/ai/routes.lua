@@ -149,38 +149,71 @@ function routes.readiness()
 	local construction = constructionModule()
 	local native = nativeModule()
 	local pathfinding = pathfindingModule()
-	local apiReady = type(api) == "table" and type(api.cmd) == "table"
-		and type(api.cmd.sendCommand) == "function"
-		and type(api.cmd.makeWorldBuildProposalCmd) == "function"
-		and type(api.cmd.makeLineCreateCmd) == "function"
-		and type(api.cmd.makeVehicleBuyCmd) == "function"
-		and type(api.cmd.makeVehicleSetLineCmd) == "function"
-		and type(api.cmd.makeVehicleSellCmd) == "function"
-		and type(api.cmd.makeLineDestroyCmd) == "function"
-		and type(api.engine) == "table" and type(api.engine.getComponent) == "function"
-		and type(api.engine.getRevision) == "function"
-		and api.type and api.type.Line
-		and type(api.type.Line.new) == "function"
-		and api.type.Line.Stop and type(api.type.Line.Stop.new) == "function"
-		and api.type.StationTerminal and type(api.type.StationTerminal.new) == "function"
-		and api.type.enum and api.type.enum.TransportMode and api.type.enum.TransportMode.BUS ~= nil
-		and api.type.ComponentType and api.type.ComponentType.STATION ~= nil
-		and api.type.ComponentType.STATION_GROUP ~= nil
-		and api.type.ComponentType.VEHICLE_DEPOT ~= nil
-	local helperReady = planner and type(planner.scan) == "function"
-		and construction and type(construction.makeProposal) == "function"
-		and type(construction.identifyEntities) == "function"
-		and pathfinding and type(pathfinding.findPathNodeToNode) == "function"
-		and native and type(native.canBuildResource) == "function"
-		and type(native.vehicleCandidates) == "function" and type(native.balance) == "function"
-	local reason = nil
-	if not (apiReady and helperReady) then reason = "native_route_api_unavailable" end
+	local missing = {}
+	local function needFunction(value, name)
+		if type(value) ~= "function" then missing[#missing + 1] = name end
+	end
+	local function needValue(value, name)
+		if value == nil then missing[#missing + 1] = name end
+	end
+	local apiTable = type(api) == "table" and api or nil
+	local cmd = apiTable and type(apiTable.cmd) == "table" and apiTable.cmd or nil
+	local engine = apiTable and type(apiTable.engine) == "table" and apiTable.engine or nil
+	local typeApi = apiTable and type(apiTable.type) == "table" and apiTable.type or nil
+	if not apiTable then
+		missing[#missing + 1] = "api"
+	else
+		if not cmd then missing[#missing + 1] = "api.cmd" end
+		if not engine then missing[#missing + 1] = "api.engine" end
+		if not typeApi then missing[#missing + 1] = "api.type" end
+	end
+	local function command(name)
+		needFunction(cmd and cmd[name], "api.cmd." .. name)
+	end
+	command("sendCommand")
+	command("makeWorldBuildProposalCmd")
+	command("makeLineCreateCmd")
+	command("makeVehicleBuyCmd")
+	command("makeVehicleSetLineCmd")
+	command("makeVehicleSellCmd")
+	command("makeLineDestroyCmd")
+	needFunction(engine and engine.getComponent, "api.engine.getComponent")
+	needFunction(engine and engine.getRevision, "api.engine.getRevision")
+	local line = typeApi and typeApi.Line
+	needFunction(line and line.new, "api.type.Line.new")
+	needFunction(line and line.Stop and line.Stop.new, "api.type.Line.Stop.new")
+	local terminal = typeApi and typeApi.StationTerminal
+	needFunction(terminal and terminal.new, "api.type.StationTerminal.new")
+	local transportMode = typeApi and typeApi.enum and typeApi.enum.TransportMode
+	needValue(transportMode and transportMode.BUS, "api.type.enum.TransportMode.BUS")
+	local componentType = typeApi and typeApi.ComponentType
+	needValue(componentType and componentType.STATION, "api.type.ComponentType.STATION")
+	needValue(componentType and componentType.STATION_GROUP, "api.type.ComponentType.STATION_GROUP")
+	needValue(componentType and componentType.VEHICLE_DEPOT, "api.type.ComponentType.VEHICLE_DEPOT")
+	if not planner then missing[#missing + 1] = "module /ai/planner.lua"
+	else needFunction(planner.scan, "planner.scan") end
+	if not construction then missing[#missing + 1] = "module /ai/construction.lua"
+	else
+		needFunction(construction.makeProposal, "construction.makeProposal")
+		needFunction(construction.identifyEntities, "construction.identifyEntities")
+	end
+	if not pathfinding then missing[#missing + 1] = "api.engine.util.pathfinding"
+	else needFunction(pathfinding.findPathNodeToNode, "pathfinding.findPathNodeToNode") end
+	if not native then missing[#missing + 1] = "module /ai/native.lua"
+	else
+		needFunction(native.canBuildResource, "native.canBuildResource")
+		needFunction(native.vehicleCandidates, "native.vehicleCandidates")
+		needFunction(native.balance, "native.balance")
+	end
+	local ready = #missing == 0
+	local reason
+	if not ready then reason = "native_route_api_unavailable: " .. table.concat(missing, ", ") end
 	return {
-		automaticPlacement = apiReady and helperReady,
+		automaticPlacement = ready,
 		reason = reason,
-		message = apiReady and helperReady
+		message = ready
 			and "APIs de construção disponíveis; a validação da prévia ocorre em cada etapa."
-			or "APIs necessárias para planejar, pré-visualizar ou conectar a rota indisponíveis.",
+			or "APIs ausentes: " .. table.concat(missing, ", "),
 		requires = { proposalPreviewChecked = true, depotRoadConnectionVerified = true },
 	}
 end
