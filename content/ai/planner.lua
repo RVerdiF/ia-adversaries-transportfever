@@ -103,6 +103,19 @@ local function roadEdges(center, player, radius)
 	return result
 end
 
+-- Town district centers can be several blocks away from a usable public road.
+-- Expand only when the smaller search found no safe segment, keeping stops
+-- close to town whenever a nearby candidate exists.
+local function nearbySafeRoads(center, player, initialRadius)
+	local radius = finite(initialRadius) and initialRadius > 0 and initialRadius or 250
+	local maxRadius = math.max(radius, 1500)
+	while true do
+		local result = roadEdges(center, player, radius)
+		if #result > 0 or radius >= maxRadius then return result end
+		radius = math.min(radius * 2, maxRadius)
+	end
+end
+
 function planner.isPublicPlainStreet(entity)
 	local edge = component(entity, "BASE_EDGE")
 	local street = component(entity, "BASE_EDGE_STREET")
@@ -335,8 +348,8 @@ end
 
 local function candidateFor(pair, player, opts, pathBudget, nodeToEdges)
 	local radius = opts.stopSearchRadius or 250
-	local roadsA = roadEdges(pair.a.center, player, radius)
-	local roadsB = roadEdges(pair.b.center, player, radius)
+	local roadsA = nearbySafeRoads(pair.a.center, player, radius)
+	local roadsB = nearbySafeRoads(pair.b.center, player, radius)
 	if #roadsA == 0 or #roadsB == 0 then return nil, "no_safe_stop_road" end
 	local a, b
 	local pathReason
