@@ -4,7 +4,7 @@ local controller = {}
 local VERSION = 2
 local DEFAULT_STARTING_CAPITAL = 10000000
 local OLD_NO_CAPITAL_REASON = "A rival exige uma partida com capital inicial finito e positivo"
-local READINESS_VERSION = 1
+local READINESS_VERSION = 2
 local OLD_READINESS_REASON = "APIs necessárias para planejar, pré-visualizar ou conectar a rota indisponíveis."
 
 function controller.create(native, routes, policy)

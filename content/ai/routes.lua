@@ -153,6 +153,10 @@ function routes.readiness()
 	local function needFunction(value, name)
 		if type(value) ~= "function" then missing[#missing + 1] = name end
 	end
+	local function needNative(value, name)
+		-- The engine's bound calls are callable userdata in game scripts.
+		if value == nil then missing[#missing + 1] = name end
+	end
 	local function needValue(value, name)
 		if value == nil then missing[#missing + 1] = name end
 	end
@@ -168,7 +172,7 @@ function routes.readiness()
 		if not typeApi then missing[#missing + 1] = "api.type" end
 	end
 	local function command(name)
-		needFunction(cmd and cmd[name], "api.cmd." .. name)
+		needNative(cmd and cmd[name], "api.cmd." .. name)
 	end
 	command("sendCommand")
 	command("makeWorldBuildProposalCmd")
@@ -177,8 +181,8 @@ function routes.readiness()
 	command("makeVehicleSetLineCmd")
 	command("makeVehicleSellCmd")
 	command("makeLineDestroyCmd")
-	needFunction(engine and engine.getComponent, "api.engine.getComponent")
-	needFunction(engine and engine.getRevision, "api.engine.getRevision")
+	needNative(engine and engine.getComponent, "api.engine.getComponent")
+	needNative(engine and engine.getRevision, "api.engine.getRevision")
 	local line = typeApi and typeApi.Line
 	needFunction(line and line.new, "api.type.Line.new")
 	needFunction(line and line.Stop and line.Stop.new, "api.type.Line.Stop.new")
@@ -198,7 +202,7 @@ function routes.readiness()
 		needFunction(construction.identifyEntities, "construction.identifyEntities")
 	end
 	if not pathfinding then missing[#missing + 1] = "api.engine.util.pathfinding"
-	else needFunction(pathfinding.findPathNodeToNode, "pathfinding.findPathNodeToNode") end
+	else needNative(pathfinding.findPathNodeToNode, "pathfinding.findPathNodeToNode") end
 	if not native then missing[#missing + 1] = "module /ai/native.lua"
 	else
 		needFunction(native.canBuildResource, "native.canBuildResource")
