@@ -54,7 +54,7 @@ local CompetitorAIPanel = react.RegisterPluginRecipe(game_bar_widgets.GameBarInf
 		if snapshot then
 			detailChildren[#detailChildren + 1] = builtin.TextView{
 				meta = { class = "font-scale-body" },
-				text = displayValue(snapshot.companyName),
+				text = lang_util.format(_("Decisão: {decision}"), { decision = displayValue(snapshot.lastDecision) }),
 			}
 			detailChildren[#detailChildren + 1] = builtin.TextView{
 				meta = { class = "font-scale-body" },

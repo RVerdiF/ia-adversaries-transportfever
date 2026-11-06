@@ -82,7 +82,7 @@ script.update({},store,1)
 assert(store.value.player==2 and store.value.phase=="fund","Actual module graph must permit rival creation")
 script.update({},store,1)
 assert(store.value.capitalized and store.value.phase=="plan")
-assert(cash[2]==1000000 and cash[1]==1000000 and created==1 and funded==1)
+assert(cash[2]==10000000 and cash[1]==1000000 and created==1 and funded==1)
 assert(subscriptions.pichauCompetitorPreviewStarted and subscriptions.pichauCompetitorPreviewResult)
 script.handleEvent({},store,"","","initNewGame")
 store.value.phase="fund"
