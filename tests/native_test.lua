@@ -9,6 +9,7 @@ local function near(actual, expected, label)
 end
 
 local players, accounts = { [1] = true, [2] = true }, { [1] = 700, [2] = 300 }
+local playerNames = { [1] = "Player", [2] = "Rival" }
 local owners, journalCommands = { [41] = 2, [42] = 2, [43] = 1 }, {}
 local maintenanceCosts = { [41] = 1200, [61] = 60 }
 local sendSuccess, nextPlayer, lastColor = true, 3, nil
@@ -70,14 +71,14 @@ api = {
 			return { kind = "journal", playerEntity = playerEntity, entry = entry, position = position }
 		end,
 		sendCommand = function(command, callback)
+			assert(callback == nil, "engine-state commands must not use callbacks")
+			if not sendSuccess then error("command rejected") end
 			if command.kind == "add" then
 				local entity = nextPlayer; nextPlayer = nextPlayer + 1
-				players[entity], accounts[entity] = true, 0
-				callback({ resultEntity = entity }, true)
+				players[entity], accounts[entity], playerNames[entity] = true, 0, command.name
 			elseif command.kind == "journal" then
 				journalCommands[#journalCommands + 1] = command
-				if sendSuccess then accounts[command.playerEntity] = accounts[command.playerEntity] + command.entry.amount end
-				callback({}, sendSuccess)
+				accounts[command.playerEntity] = accounts[command.playerEntity] + command.entry.amount
 			end
 		end,
 	},
@@ -85,7 +86,7 @@ api = {
 		util = {
 			getPlayer = function() return 1 end, getWorld = function() return 99 end,
 			getYear = function() return 2010 end,
-			getEntityName = function(entity) return entity == 2 and "Rival" or "Player" end,
+			getEntityName = function(entity) return playerNames[entity] or "Player" end,
 			finance = {
 				getPlayersBalance = function(entity) return accounts[entity] end,
 				calculateBalance = function(entities, startTime, endTime, maintenanceIncomeOnly, maintenanceType)
@@ -141,7 +142,9 @@ api = {
 		end,
 		getEntitiesWithComponent = function(componentType, filters)
 			local result = {}
-			if componentType == C.TRANSPORT_VEHICLE or componentType == C.LINE then
+			if componentType == C.PLAYER then
+				for entity in pairs(players) do result[#result + 1] = entity end
+			elseif componentType == C.TRANSPORT_VEHICLE or componentType == C.LINE then
 				for entity, owner in pairs(owners) do
 					if owner == filters.requireOwnedByPlayer then result[#result + 1] = entity end
 				end
@@ -162,41 +165,45 @@ ug_require = function(path)
 end
 
 local native = dofile("content/ai/native.lua")
+api.engine.config = { getModParams = function()
+	return { pichau_competitor_ai = { startingCapital = 3 } }
+end }
+eq(native.startingCapital(), 20000000, "selected capital index maps to amount")
 eq(native.getPlayer(), 1, "local player")
 eq(native.balance(2), 300, "player balance")
 eq(native.now(), 500, "game time")
 eq(native.monthDuration(), 2400, "month duration")
 
-local created, createError
-native.newPlayer("Rival", { 1, 0, 0 }, function(entity, err) created, createError = entity, err end)
-eq(created, 3, "created player resultEntity"); eq(createError, nil, "create player error")
+local created, createError = native.newPlayer("New Rival", { 1, 0, 0 })
+eq(created, true, "created player command"); eq(createError, nil, "create player error")
+eq(native.playersNamed("New Rival")[1], 3, "created player observed by name")
 eq(lastColor.x, 1, "player color x component"); eq(lastColor.z, 0, "player color z component")
 
-local funded, fundingError, fundedBalance
-native.fundToBalance(2, 1000, function(ok, err, balance) funded, fundingError, fundedBalance = ok, err, balance end)
+local funded, fundingError, fundedBalance = native.fundToBalance(2, 1000)
 eq(funded, true, "fund command succeeds"); eq(fundingError, nil, "fund error")
-eq(fundedBalance, 1000, "callback balance"); eq(accounts[2], 1000, "target balance reached")
+eq(fundedBalance, 1000, "confirmed balance"); eq(accounts[2], 1000, "target balance reached")
 eq(journalCommands[1].playerEntity, 2, "journal targets rival")
 eq(journalCommands[1].entry.amount, 700, "journal uses balance delta")
 eq(journalCommands[1].entry.category.type, "INCOME", "positive entry category")
 local count = #journalCommands
-native.fundToBalance(2, 1000, function(ok) funded = ok end)
+funded = native.fundToBalance(2, 1000)
 eq(funded, true, "repeat funding succeeds without change"); eq(#journalCommands, count, "repeat does not journal")
-native.fundToBalance(2, 400, function(ok) funded = ok end)
+funded = native.fundToBalance(2, 400)
 eq(funded, true, "exact target reduction"); eq(accounts[2], 400, "reduced target reached")
 eq(journalCommands[#journalCommands].entry.amount, -600, "negative delta")
 eq(journalCommands[#journalCommands].entry.category.type, "OTHER", "negative entry category")
 
-native.fundToBalance(1, 900, function(ok, err) funded, fundingError = ok, err end)
+funded, fundingError = native.fundToBalance(1, 900)
 eq(funded, false, "human account mutation refused"); eq(fundingError, "refusing_local_player_funding", "human refusal reason")
 eq(#journalCommands, count + 1, "human account not journaled")
-native.fundToBalance(2, math.huge, function(ok, err) funded, fundingError = ok, err end)
+funded, fundingError = native.fundToBalance(2, math.huge)
 eq(funded, false, "infinite target refused"); eq(fundingError, "invalid_funding_arguments", "infinite target reason")
-native.fundToBalance(2, 1.5, function(ok, err) funded, fundingError = ok, err end)
+funded, fundingError = native.fundToBalance(2, 1.5)
 eq(funded, false, "fractional target refused")
 sendSuccess = false
-native.fundToBalance(2, 500, function(ok, err) funded, fundingError = ok, err end)
-eq(funded, false, "journal failure reported"); eq(fundingError, "journal_command_failed", "journal failure reason")
+funded, fundingError = native.fundToBalance(2, 500)
+eq(funded, false, "journal failure reported")
+assert(fundingError:find("journal_command_failed:", 1, true) == 1, "journal failure reason")
 eq(accounts[2], 400, "failed command does not mutate balance"); sendSuccess = true
 
 eq(#native.ownedVehicles(2), 2, "owned vehicle filter")

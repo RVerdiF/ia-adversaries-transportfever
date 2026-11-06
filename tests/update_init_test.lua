@@ -22,15 +22,16 @@ local native = {
 	monthDuration = function() return 30 end,
 	getPlayer = function() return "human" end,
 	balance = function(player) return balances[player] end,
+	playersNamed = function() return counts.newPlayer > 0 and { "rival" } or {} end,
 	startingCapital = function() return 10000000 end,
-	newPlayer = function(_name, _color, callback)
+	newPlayer = function()
 		counts.newPlayer = counts.newPlayer + 1
-		callback("rival")
+		return true
 	end,
-	fundToBalance = function(player, amount, callback)
+	fundToBalance = function(player, amount)
 		counts.fund = counts.fund + 1
 		balances[player] = amount
-		callback(true, nil, balances[player])
+		return true, nil, balances[player]
 	end,
 	snapshot = function(player) return { balance = balances[player], annualRunningCost = 120 } end,
 	bestBus = function() return { modelId = "bus-1", purchaseCost = 100, runningCost = 120 } end,
@@ -51,7 +52,8 @@ local state = store:get()
 equal(type(state), "table", "update bootstraps state without initNewGame")
 equal(state.version, 2, "bootstrapped state is versioned")
 equal(counts.newPlayer, 1, "rival company created on an existing save")
-equal(state.phase, "fund", "bootstrap advances to funding")
+equal(state.phase, "create_player", "creation awaits confirmation from world state")
+equal(state.pending, "create_player", "creation marker is durable")
 equal(state.initialCapital, 10000000, "capital taken from the same path as initNewGame")
 equal(counts.subscribe, 2, "preview events subscribed once")
 

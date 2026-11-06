@@ -11,12 +11,6 @@ local function finite(value)
 		and value ~= math.huge and value ~= -math.huge
 end
 
-local function safeCall(callback, ...)
-	if type(callback) == "function" then
-		callback(...)
-	end
-end
-
 function native.getPlayer()
 	return api.engine.util.getPlayer()
 end
@@ -30,7 +24,7 @@ end
 
 function native.startingCapital()
 	local config = api.engine and api.engine.config
-	if not config or type(config.getModParams) ~= "function" then
+	if not config or config.getModParams == nil then
 		return DEFAULT_STARTING_CAPITAL
 	end
 	local ok, allParams = pcall(config.getModParams)
@@ -53,48 +47,51 @@ function native.monthDuration()
 	return api.util.getDefaultMonthDuration()
 end
 
-function native.newPlayer(name, color, callback)
+function native.playersNamed(name)
+	local matches = {}
+	if type(name) ~= "string" then return matches end
+	for _, entity in ipairs(api.engine.getEntitiesWithComponent(api.type.ComponentType.PLAYER)) do
+		if api.engine.util.getEntityName(entity) == name then matches[#matches + 1] = entity end
+	end
+	table.sort(matches)
+	return matches
+end
+
+-- Engine state executes commands immediately. Never provide a callback here:
+-- GameScript callbacks are disallowed, and command results are not read back.
+function native.newPlayer(name, color)
 	if type(name) ~= "string" or color == nil then
-		safeCall(callback, nil, "invalid_player_arguments")
-		return
+		return false, "invalid_player_arguments"
 	end
 	if type(color) == "table" then
 		color = api.type.Vec3f.new(color[1] or color.x, color[2] or color.y, color[3] or color.z)
 	end
 
 	local command = api.cmd.makeGameAddPlayerCmd(name, color)
-	api.cmd.sendCommand(command, function(result, success)
-		if not success or not result or type(result.resultEntity) ~= "number" then
-			safeCall(callback, nil, "game_add_player_failed")
-			return
-		end
-		safeCall(callback, result.resultEntity, nil)
-	end)
+	local ok, err = pcall(api.cmd.sendCommand, command)
+	if not ok then return false, "game_add_player_command_failed:" .. tostring(err) end
+	return true, nil
 end
 
 -- JournalBookAsset changes the account through the normal finance ledger.
 -- Re-read the account first so reloads or retries do not blindly add funds.
-function native.fundToBalance(playerEntity, targetBalance, callback)
+function native.fundToBalance(playerEntity, targetBalance)
 	if type(playerEntity) ~= "number" or not finite(targetBalance)
 		or targetBalance < 0 or targetBalance ~= math.floor(targetBalance) then
-		safeCall(callback, false, "invalid_funding_arguments")
-		return
+		return false, "invalid_funding_arguments"
 	end
 	if playerEntity == native.getPlayer() then
-		safeCall(callback, false, "refusing_local_player_funding")
-		return
+		return false, "refusing_local_player_funding"
 	end
 
 	local currentBalance = native.balance(playerEntity)
 	if not finite(currentBalance) then
-		safeCall(callback, false, "balance_unavailable")
-		return
+		return false, "balance_unavailable"
 	end
 
 	local delta = targetBalance - currentBalance
 	if delta == 0 then
-		safeCall(callback, true, nil, currentBalance)
-		return
+		return true, nil, currentBalance
 	end
 
 	local entry = api.type.JournalEntry.new()
@@ -111,19 +108,11 @@ function native.fundToBalance(playerEntity, targetBalance, callback)
 		entry,
 		api.type.Vec3f.new(0, 0, 0)
 	)
-	api.cmd.sendCommand(command, function(_, success)
-		if not success then
-			safeCall(callback, false, "journal_command_failed", native.balance(playerEntity))
-			return
-		end
-
-		local updatedBalance = native.balance(playerEntity)
-		if updatedBalance ~= targetBalance then
-			safeCall(callback, false, "balance_did_not_reach_target", updatedBalance)
-			return
-		end
-		safeCall(callback, true, nil, updatedBalance)
-	end)
+	local ok, err = pcall(api.cmd.sendCommand, command)
+	if not ok then return false, "journal_command_failed:" .. tostring(err), native.balance(playerEntity) end
+	local updatedBalance = native.balance(playerEntity)
+	if updatedBalance ~= targetBalance then return false, "balance_did_not_reach_target", updatedBalance end
+	return true, nil, updatedBalance
 end
 
 function native.ownedEntities(playerEntity, componentType)

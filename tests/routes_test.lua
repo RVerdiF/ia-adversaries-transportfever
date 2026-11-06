@@ -26,6 +26,7 @@ api = {
 			LINE = components.line,
 			VEHICLE_DEPOT = components.depot,
 			TRANSPORT_VEHICLE = components.vehicle,
+			NAME = "name",
 		},
 		enum = {
 			RoadType = { STREET = "street" },
@@ -41,9 +42,11 @@ api = {
 			EdgeObject = { new = function() return {} end },
 		},
 		SimpleProposal = { new = function() return {} end },
+		Line = { new = function() return {} end, Stop = { new = function() return {} end } },
+		StationTerminal = { new = function() return {} end },
 	},
 	engine = {
-		util = { getYear = function() return 2000 end },
+		util = { getYear = function() return 2000 end, pathfinding = { findPathNodeToNode = function() return {} end } },
 		getComponent = function(entity, kind)
 			return entities[entity] and entities[entity][kind] or nil
 		end,
@@ -51,8 +54,17 @@ api = {
 		system = {
 			transportVehicleSystem = {
 				getLineVehicles = function() return lineVehicles end,
+				getDepotVehicles = function(depot)
+					local result = {}
+					for entity, state in pairs(entities) do
+						if state.vehicle and state.vehicle.depot == depot then result[#result + 1] = entity end
+					end
+					return result
+				end,
 			},
+			lineSystem = { getLinesForPlayer = function() return {} end },
 		},
+		getRevision = function() return { num = { 1, 2, 3 } } end,
 	},
 	cmd = {
 		makeVehicleSendToDepotCmd = function(vehicle, sellOnArrival, jumpToDepot)
@@ -68,11 +80,18 @@ api = {
 			return { kind = "assign", vehicle = vehicle, line = line, stopIndex = stopIndex }
 		end,
 		sendCommand = function(command, callback)
+			assert(callback == nil, "GameScript commands must not receive callbacks")
 			commands[#commands + 1] = command
 			if command.kind == "buy" then
 				entities[purchaseResult] = { owned = { player = command.player }, vehicle = { depot = purchaseDepot, line = -1 } }
-				callback({ resultVehicleEntity = purchaseResult }, true)
-			else callback(command, true) end
+				command.resultVehicleEntity = purchaseResult
+			elseif command.kind == "assign" then
+				entities[command.vehicle].vehicle.line = command.line
+			elseif command.kind == "sell" then
+				for _, vehicle in ipairs(command.vehicles) do entities[vehicle] = nil end
+			elseif command.kind == "destroy" then
+				entities[command.line] = nil
+			end
 		end,
 	},
 	res = { modelRep = { get = function() return nil end } },

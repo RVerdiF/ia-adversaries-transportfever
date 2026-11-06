@@ -4,7 +4,7 @@ local controller = {}
 local VERSION = 2
 local DEFAULT_STARTING_CAPITAL = 10000000
 local OLD_NO_CAPITAL_REASON = "A rival exige uma partida com capital inicial finito e positivo"
-local READINESS_VERSION = 2
+local READINESS_VERSION = 3
 local OLD_READINESS_REASON = "APIs necessárias para planejar, pré-visualizar ou conectar a rota indisponíveis."
 
 function controller.create(native, routes, policy)
@@ -31,7 +31,10 @@ function controller.create(native, routes, policy)
         state.pending = nil
         local now, month = native.now(), native.monthDuration()
         if operation.key then state.blockedCandidates[operation.key] = now + 3 * month end
-        if operation.cleanupIncomplete or operation.unverifiedCreatedLine or operation.unverifiedCreatedVehicle then
+        if operation.stage == "command_indeterminate" then
+            block(store, state, "Comando de rota sem confirmação; tentativa preservada: " ..
+                tostring(operation.indeterminateReason or reason))
+        elseif operation.cleanupIncomplete or operation.unverifiedCreatedLine or operation.unverifiedCreatedVehicle then
             block(store, state, "A obra retornou entidades sem identificação; tentativa preservada: " .. tostring(reason))
         elseif operation.stage == "cleanup" and not operation.cleanupFailed then
             state.phase = "build"
@@ -148,6 +151,45 @@ function controller.create(native, routes, policy)
             end
             save(store, state)
         end
+        -- Recover only the two bootstrap actions. A marker is written before
+        -- sending either command; if completion cannot be proven from world
+        -- state, stop rather than issuing it again.
+        if state.version == VERSION and state.pending == "create_player" then
+            local matches = native.playersNamed and native.playersNamed(state.companyName) or {}
+            if #matches == 1 and matches[1] ~= native.getPlayer() then
+                state.player, state.phase, state.pending = matches[1], "fund", nil
+                remember(state, "Empresa encontrada após comando de criação")
+                save(store, state)
+            elseif #matches > 1 then
+                block(store, state, "Mais de uma empresa corresponde ao nome da rival")
+                return
+            else
+                block(store, state, "Criação enviada sem confirmação; não será repetida automaticamente")
+                return
+            end
+        elseif state.version == VERSION and state.pending == "fund" then
+            local balance = state.player and native.balance(state.player)
+            local humanBalance = native.balance(native.getPlayer())
+            if type(balance) == "number" and balance == state.initialCapital
+                and state.humanBalanceBeforeFunding ~= nil
+                and humanBalance == state.humanBalanceBeforeFunding then
+                state.balance, state.capitalized, state.phase, state.pending = balance, true, "plan", nil
+                state.humanBalanceBeforeFunding = nil
+                state.status = "Procurando rota"
+                remember(state, "Capital inicial confirmada na conta rival")
+                save(store, state)
+            else
+                block(store, state, "Capitalização enviada sem confirmação; não será repetida automaticamente")
+                return
+            end
+        elseif state.version == VERSION and state.phase == "blocked" and state.player == nil
+            and state.pending == nil and state.lastDecision
+            and tostring(state.lastDecision):find("Callbacks are currently disallowed", 1, true) then
+            -- Upgrade path for saves blocked by the former callback based bootstrap.
+            state.phase, state.status = "create_player", "Recuperando empresa rival"
+            state.lastDecision = "Verificando se a empresa já foi criada"
+            save(store, state)
+        end
         if state.version ~= VERSION then block(store, state, "Versão de estado incompatível"); return end
         if state.phase == "blocked" then
             local oldReadinessBlock = state.blockedReasonCategory == nil
@@ -185,32 +227,40 @@ function controller.create(native, routes, policy)
                     return
                 end
             end
+            local matches = native.playersNamed and native.playersNamed(state.companyName) or {}
+            if #matches == 1 and matches[1] ~= native.getPlayer() then
+                state.player, state.phase = matches[1], "fund"
+                remember(state, "Empresa rival existente reconciliada")
+                save(store, state); return
+            elseif #matches == 1 then
+                block(store, state, "O nome da rival corresponde ao jogador humano"); return
+            elseif #matches > 1 then
+                block(store, state, "Mais de uma empresa corresponde ao nome da rival"); return
+            end
             state.pending = "create_player"; save(store, state)
-            native.newPlayer(state.companyName, {0.15, 0.55, 0.95}, function(player, err)
-                state.pending = nil
-                if not player then block(store, state, err); return end
-                if player == native.getPlayer() then block(store, state, "A API retornou o jogador humano"); return end
-                state.player, state.phase = player, "fund"
-                remember(state, "Empresa criada; verificando conta própria")
-                save(store, state)
-            end)
+            local sent, err = native.newPlayer(state.companyName, {0.15, 0.55, 0.95})
+            if not sent then block(store, state, err); return end
             return
         end
         if state.phase == "fund" then
             if state.capitalized then state.phase = "plan"; save(store, state); return end
             local humanBefore = native.balance(native.getPlayer())
+            state.humanBalanceBeforeFunding = humanBefore
             state.pending = "fund"; save(store, state)
-            native.fundToBalance(state.player, state.initialCapital, function(ok, err, balance)
+            local ok, err, balance = native.fundToBalance(state.player, state.initialCapital)
+            if not ok then block(store, state, err); return end
+            local humanAfter = native.balance(native.getPlayer())
+            if humanBefore == nil or humanAfter ~= humanBefore then
+                block(store, state, "A capitalização alterou ou não confirmou a conta humana; integração bloqueada"); return
+            end
+            if balance == state.initialCapital then
                 state.pending = nil
-                if not ok then block(store, state, err); return end
-                if native.balance(native.getPlayer()) ~= humanBefore then
-                    block(store, state, "A capitalização alterou a conta humana; integração bloqueada"); return
-                end
+                state.humanBalanceBeforeFunding = nil
                 state.balance, state.capitalized, state.phase = balance, true, "plan"
                 state.status = "Procurando rota"
                 remember(state, "Capital inicial registrado uma única vez na conta rival")
                 save(store, state)
-            end)
+            end
             return
         end
         if state.phase == "build" and state.operation and state.operation.preview then

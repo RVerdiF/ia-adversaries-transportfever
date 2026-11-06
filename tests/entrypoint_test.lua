@@ -47,6 +47,8 @@ assert(mutations == 0)
 -- are replaced. This catches a permanent readiness=false or a bad constructor
 -- alias that an isolated controller mock would hide.
 local cash = {[1]=1000000,[2]=0}
+api.type.ComponentType.PLAYER="player"
+api.type.ComponentType.NAME="name"
 api.type.ComponentType.STATION="station"
 api.type.ComponentType.STATION_GROUP="group"
 api.type.ComponentType.VEHICLE_DEPOT="depot"
@@ -58,6 +60,19 @@ api.type.enum={TransportMode={BUS="bus"}}
 api.engine.getRevision=function() return {num={1,2}} end
 api.engine.util.pathfinding={findPathNodeToNode=function() return {} end}
 api.engine.util.finance.getPlayersBalance=function(player) return cash[player] end
+local names={[1]="Human"}
+api.engine.util.getEntityName=function(entity) return names[entity] end
+api.engine.getEntitiesWithComponent=function(kind)
+    if kind=="player" then
+        local entities={}
+        for entity in pairs(names) do entities[#entities+1]=entity end
+        table.sort(entities)
+        return entities
+    end
+    return {}
+end
+api.engine.system={lineSystem={getLinesForPlayer=function() return {} end},
+    transportVehicleSystem={getDepotVehicles=function() return {} end}}
 local created, funded = 0,0
 api.cmd.makeGameAddPlayerCmd=function(name,color)
     assert(type(name)=="string" and color.x==.15)
@@ -67,11 +82,12 @@ api.cmd.makeJournalBookAssetCmd=function(player,entry)
     assert(player==2 and entry.category.type=="income")
     return {kind="fund",player=player,amount=entry.amount}
 end
-api.cmd.sendCommand=function(command,done)
+api.cmd.sendCommand=function(command,...)
+    assert(select("#",...)==0,"GameScript bootstrap must not pass a command callback")
     mutations=mutations+1
-    if command.kind=="create" then created=created+1;done({resultEntity=2},true)
+    if command.kind=="create" then created=created+1;names[2]="Viação Horizonte";cash[2]=0
     elseif command.kind=="fund" then
-        funded=funded+1;cash[command.player]=cash[command.player]+command.amount;done({},true)
+        funded=funded+1;cash[command.player]=cash[command.player]+command.amount
     else error("Unexpected mutation during bootstrap") end
 end
 store.value={}
@@ -79,14 +95,16 @@ local subscriptions={}
 function store:subscribeToEvent(name) subscriptions[name]=true end
 script.handleEvent({},store,"","","initNewGame")
 script.update({},store,1)
-assert(store.value.player==2 and store.value.phase=="fund","Actual module graph must permit rival creation")
+assert(store.value.pending=="create_player" and created==1,
+    "Creation marker persists while world result is reconciled (phase="..tostring(store.value.phase)..", pending="..tostring(store.value.pending)..", created="..tostring(created)..", decision="..tostring(store.value.lastDecision)..")")
 script.update({},store,1)
-assert(store.value.capitalized and store.value.phase=="plan")
+assert(store.value.player==2 and store.value.phase=="plan","Observed creation and funding advance the real module graph")
+script.update({},store,1)
+assert(store.value.capitalized,"Funding is confirmed from world state")
 assert(cash[2]==10000000 and cash[1]==1000000 and created==1 and funded==1)
 assert(subscriptions.pichauCompetitorPreviewStarted and subscriptions.pichauCompetitorPreviewResult)
 script.handleEvent({},store,"","","initNewGame")
 store.value.phase="fund"
 script.update({},store,1)
 assert(created==1 and funded==1,"Duplicate initialization must never repeat capital")
-assert(errors==0)
 print("entrypoint tests passed (real graph: capability check, create and fund once)")

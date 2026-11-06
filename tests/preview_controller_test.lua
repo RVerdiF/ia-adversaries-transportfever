@@ -10,6 +10,7 @@ local function harness()
 	local now, constructionValid = 1000, true
 	local trace, queuedEvents, economicCommands = {}, {}, {}
 	local buildCalls, accepted, scanCalls = 0, 0, 0
+	local rivalExists, rivalBalance = false, 0
 	local store = { state = nil, subscriptions = {} }
 	function store:get() return self.state end
 	function store:set(state) self.state = state end
@@ -19,12 +20,13 @@ local function harness()
 		now = function() return now end,
 		monthDuration = function() return 100 end,
 		getPlayer = function() return 1 end,
-		balance = function(player) return player == 1 and 10000 or 10000 end,
+		balance = function(player) return player == 1 and 10000 or rivalBalance end,
+		playersNamed = function() return rivalExists and { 2 } or {} end,
 		snapshot = function(player)
 			return { balance = 10000, monthlyCost = 100, annualRunningCost = 1200 }
 		end,
-		newPlayer = function(_, _, done) done(2) end,
-		fundToBalance = function(_, target, done) done(true, nil, target) end,
+		newPlayer = function() rivalExists = true; return true end,
+		fundToBalance = function(_, target) rivalBalance = target; return true, nil, target end,
 		bestBus = function()
 			return { modelId = 7, purchaseCost = 100, runningCost = 1200 }
 		end,

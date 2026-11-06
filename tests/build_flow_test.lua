@@ -20,31 +20,57 @@ api = {
 		Vec3f = { new = function(x, y, z) return { x = x, y = y, z = z } end },
 		StationTerminal = { new = function(station, terminal) return { station = station, terminal = terminal } end },
 		ComponentType = { PLAYER_OWNED = owned, LINE = "line", VEHICLE_DEPOT = "depot", TRANSPORT_VEHICLE = "vehicle",
-			STATION_GROUP = "group", STATION = "station" },
+			STATION_GROUP = "group", STATION = "station", NAME = "name" },
 		enum = { Carrier = { ROAD = "road" }, TransportMode = { BUS = "bus" } },
 	},
 	engine = {
 		getComponent = function(entity, kind) return entities[entity] and entities[entity][kind] end,
 		entityExists = function(entity) return entities[entity] ~= nil end,
 		getRevision = function() return { num = { 1, 2, 3 } } end,
+		system = {
+			lineSystem = { getLinesForPlayer = function(player)
+				local result = {}
+				for entity, state in pairs(entities) do
+					if state.line and state.owned and state.owned.player == player then result[#result + 1] = entity end
+				end
+				return result
+			end },
+			transportVehicleSystem = {
+				getDepotVehicles = function(depot)
+					local result = {}
+					for entity, state in pairs(entities) do
+						if state.vehicle and state.vehicle.depot == depot then result[#result + 1] = entity end
+					end
+					return result
+				end,
+			},
+		},
 		util = { pathfinding = { findPathNodeToNode = function() return { { 1, false } } end } },
 	},
 	cmd = {
 		makeWorldBuildProposalCmd = function() return {} end,
-		makeLineCreateCmd = function(name, color, player, line) return { kind = "line", line = line } end,
-		makeVehicleBuyCmd = function() return { kind = "buy" } end,
-		makeVehicleSetLineCmd = function() return { kind = "assign" } end,
+		makeLineCreateCmd = function(name, color, player, line) return { kind = "line", name = name, player = player, line = line } end,
+		makeVehicleBuyCmd = function(player, depot, config) return { kind = "buy", player = player, depot = depot, config = config } end,
+		makeVehicleSetLineCmd = function(vehicle, line) return { kind = "assign", vehicle = vehicle, line = line } end,
 		makeVehicleSellCmd = function() return { kind = "sell" } end,
-		makeLineDestroyCmd = function() return { kind = "destroy" } end,
+		makeLineDestroyCmd = function(line) return { kind = "destroy", line = line } end,
 		sendCommand = function(command, callback)
+			assert(callback == nil, "GameScript commands must not receive callbacks")
 			commands[#commands + 1] = command
 			if command.kind == "line" then
-				entities[300] = { owned = { player = 9 }, line = command.line }
-				callback({ resultEntity = 300 }, true)
+				entities[300] = { owned = { player = command.player }, line = command.line,
+					name = { name = command.name } }
+				command.resultEntity = 300
 			elseif command.kind == "buy" then
-				entities[400] = { owned = { player = 9 }, vehicle = { depot = 200, line = -1 } }
-				callback({ resultVehicleEntity = 400 }, true)
-			else callback({}, true) end
+				entities[400] = { owned = { player = command.player }, vehicle = { depot = command.depot, line = -1 } }
+				command.resultVehicleEntity = 400
+			elseif command.kind == "assign" then
+				entities[400].vehicle.line = command.line or 300
+			elseif command.kind == "sell" then
+				for _, vehicle in ipairs(command.vehicles) do entities[vehicle] = nil end
+			elseif command.kind == "destroy" then
+				entities[command.line] = nil
+			end
 		end,
 	},
 }
@@ -120,6 +146,9 @@ routes.stepBuild(9, operation, function(ok, updated, completedRoute, err)
 end)
 assert(route and route.line == 300 and route.depot == 200 and #route.infrastructure == 3,
 	"final route retains owned assets")
+assert(commands[1].kind == "line" and commands[2].kind == "buy" and commands[3].kind == "assign",
+	"line creation, bus purchase, and assignment execute synchronously in order")
+assert(entities[400].vehicle.line == 300, "immediate assignment updates world state before route completion")
 
 -- A failed later preview starts serialized cleanup of already built assets.
 local cleanupOp = {

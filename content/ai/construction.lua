@@ -19,7 +19,7 @@ local function ownedBy(entity, player)
 end
 local function edgeId(edge) return type(edge) == "table" and (edge.entity or edge.id) or edge end
 local function currentRevision(entity)
-	if type(api.engine.getRevision) == "function" then
+	if api.engine.getRevision ~= nil then
 		local ok, value = pcall(api.engine.getRevision, entity)
 		if ok then return value end
 	end
@@ -35,7 +35,7 @@ local function sameRevision(current, expected)
 	return current == expected
 end
 local function stationGroupForStation(player, stationEntity)
-	if type(api.engine.getEntitiesWithComponent) ~= "function" then return nil end
+	if api.engine.getEntitiesWithComponent == nil then return nil end
 	local groups = api.engine.getEntitiesWithComponent(api.type.ComponentType.STATION_GROUP, {
 		requireOwnedByPlayer = player,
 	}) or {}
@@ -48,7 +48,7 @@ local function stationGroupForStation(player, stationEntity)
 			if not ownership then
 				local connector = api.engine.system and api.engine.system.streetConnectorSystem
 				local callback = connector and connector.getConstructionEntityForStation
-				if type(callback) == "function" then
+				if callback ~= nil then
 					local ok, parent = pcall(callback, member)
 					if ok and type(parent) == "number" and parent >= 0 then
 						ownership = component(parent, api.type.ComponentType.PLAYER_OWNED)
@@ -234,7 +234,7 @@ function construction.identifyEntities(player, resultEntities, kind)
 	local function constructionForChild(child, method)
 		local system = api.engine.system and api.engine.system.streetConnectorSystem
 		local callback = system and system[method]
-		if type(callback) ~= "function" then return nil end
+		if callback == nil then return nil end
 		local ok, parent = pcall(callback, child)
 		if ok and type(parent) == "number" and parent >= 0 and ownedBy(parent, player)
 			and component(parent, api.type.ComponentType.CONSTRUCTION) then return parent end

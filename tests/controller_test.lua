@@ -15,6 +15,7 @@ local function harness(options)
 	local humanBalance = options.humanBalance
 	if humanBalance == nil then humanBalance = 20000 end
 	local balances = { [human] = humanBalance, [rival] = options.rivalBalance or 0 }
+	local playerNames = { [human] = options.humanName or "Human" }
 	local store = { value = options.state }
 	function store:get() return self.value end
 	function store:set(value) self.value = value end
@@ -36,15 +37,22 @@ local function harness(options)
 		getPlayer = function() return human end,
 		balance = function(player) return balances[player] end,
 		startingCapital = function() return options.startingCapital or 10000000 end,
-		newPlayer = function(_name, _color, callback)
-			counts.newPlayer = counts.newPlayer + 1
-			callback(rival)
+		playersNamed = function(name)
+			local found = {}
+			for entity, playerName in pairs(playerNames) do if playerName == name then found[#found + 1] = entity end end
+			return found
 		end,
-		fundToBalance = function(player, amount, callback)
+		newPlayer = function(name, _color)
+			counts.newPlayer = counts.newPlayer + 1
+			if not options.uncertainCreate then playerNames[rival] = name end
+			return true
+		end,
+		fundToBalance = function(player, amount)
 			counts.fund = counts.fund + 1
+			if options.uncertainFund then return true end
 			balances[player] = amount
 			if options.changeHumanDuringFund then balances[human] = balances[human] - 1 end
-			callback(true, nil, balances[player])
+			return true, nil, balances[player]
 		end,
 		snapshot = function(player)
 			if options.missingSnapshot then return nil end
@@ -124,8 +132,10 @@ do
 	local humanBefore = h.getBalance(h.human)
 	equal(state.initialCapital, 10000000, "rival uses configured starting capital")
 	update(h)
-	equal(h.store:get().phase, "fund", "player creation advances to funding")
+	equal(h.store:get().phase, "create_player", "creation remains pending until world state is observed")
 	equal(h.counts.newPlayer, 1, "creates one rival company")
+	update(h)
+	equal(h.store:get().phase, "plan", "observed player advances through funding")
 	update(h)
 	state = h.store:get()
 	equal(state.phase, "plan", "funding advances to planning")
@@ -137,6 +147,27 @@ do
 	equal(h.counts.fund, 1, "duplicate init does not fund again")
 	update(h)
 	equal(h.counts.fund, 1, "later updates do not fund again")
+end
+
+-- Pending bootstrap markers reconcile observed effects and never replay commands.
+do
+	local h = harness({ uncertainCreate = true })
+	initialize(h)
+	update(h)
+	equal(h.store:get().pending, "create_player", "create marker is saved before command")
+	local state = update(h)
+	equal(state.phase, "blocked", "unconfirmed creation blocks safely")
+	update(h)
+	equal(h.counts.newPlayer, 1, "uncertain creation is not duplicated")
+end
+do
+	local h = harness({ state = { version=2, phase="fund", player="rival", initialCapital=10000000,
+		pending="fund", humanBalanceBeforeFunding=20000, capitalized=false, routes={}, blockedCandidates={}, history={} },
+		rivalBalance=10000000 })
+	local state = update(h)
+	equal(state.phase, "plan", "funding is reconciled from rival balance")
+	equal(state.capitalized, true, "reconciled funding marks capitalized")
+	equal(h.counts.fund, 0, "reconciliation never repeats funding")
 end
 
 -- A failed placement preflight persists its reason and blocks before company
@@ -158,6 +189,7 @@ end
 do
 	local h = harness({ changeHumanDuringFund = true })
 	initialize(h)
+	update(h)
 	update(h)
 	local state = update(h)
 	equal(state.phase, "blocked", "human balance mutation blocks integration")
@@ -198,13 +230,14 @@ do
 	equal(state.phase, "operate", "controller returns to operation after close")
 end
 
--- An existing save without initialized rival state remains untouched.
+-- An existing save without initialized rival state follows the idempotent
+-- bootstrap path and persists its company marker before creating a rival.
 do
 	local original = {}
 	local h = harness({ state = original })
 	update(h)
-	equal(h.store:get(), original, "empty existing save is not initialized")
-	equal(h.counts.newPlayer, 0, "existing save does not create a company")
+	equal(h.store:get().phase, "create_player", "empty existing save is initialized")
+	equal(h.counts.newPlayer, 1, "existing save starts one rival creation")
 	equal(h.counts.fund, 0, "existing save is not funded")
 end
 

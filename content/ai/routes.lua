@@ -183,6 +183,9 @@ function routes.readiness()
 	command("makeLineDestroyCmd")
 	needNative(engine and engine.getComponent, "api.engine.getComponent")
 	needNative(engine and engine.getRevision, "api.engine.getRevision")
+	local systems = engine and engine.system
+	needNative(systems and systems.lineSystem and systems.lineSystem.getLinesForPlayer, "api.engine.system.lineSystem.getLinesForPlayer")
+	needNative(systems and systems.transportVehicleSystem and systems.transportVehicleSystem.getDepotVehicles, "api.engine.system.transportVehicleSystem.getDepotVehicles")
 	local line = typeApi and typeApi.Line
 	needFunction(line and line.new, "api.type.Line.new")
 	needFunction(line and line.Stop and line.Stop.new, "api.type.Line.Stop.new")
@@ -194,6 +197,7 @@ function routes.readiness()
 	needValue(componentType and componentType.STATION, "api.type.ComponentType.STATION")
 	needValue(componentType and componentType.STATION_GROUP, "api.type.ComponentType.STATION_GROUP")
 	needValue(componentType and componentType.VEHICLE_DEPOT, "api.type.ComponentType.VEHICLE_DEPOT")
+	needValue(componentType and componentType.NAME, "api.type.ComponentType.NAME")
 	if not planner then missing[#missing + 1] = "module /ai/planner.lua"
 	else needFunction(planner.scan, "planner.scan") end
 	if not construction then missing[#missing + 1] = "module /ai/construction.lua"
@@ -325,7 +329,7 @@ end
 local function routeConnections(operation)
 	local pathfinding = getPathfinding()
 	local findPath = pathfinding and pathfinding.findPathNodeToNode
-	if type(findPath) ~= "function" then return false, "depot_pathfinder_unavailable" end
+	if findPath == nil then return false, "depot_pathfinder_unavailable" end
 	local depot = component(operation.depot, api.type.ComponentType.VEHICLE_DEPOT)
 	if not depot or #(depot.inNodes or {}) == 0 or #(depot.outNodes or {}) == 0 then
 		return false, "depot_nodes_missing"
@@ -368,6 +372,44 @@ local function routeConnections(operation)
 		operation.selectedStops[#operation.selectedStops + 1] = {
 			station = selection.station, terminal = selection.terminal,
 		}
+	end
+	return true
+end
+
+-- Engine-state commands execute synchronously. Their optional callback is a
+-- GUI/console convenience; inspect the engine state after dispatch instead.
+local function sendNow(command)
+	local ok, err = pcall(api.cmd.sendCommand, command)
+	if not ok then return false, tostring(err) end
+	return true, nil
+end
+
+local function ownedPlayerLines(player)
+	local system = api.engine.system and api.engine.system.lineSystem
+	if not system or not system.getLinesForPlayer then return {} end
+	local ok, lines = pcall(system.getLinesForPlayer, player)
+	return ok and type(lines) == "table" and lines or {}
+end
+
+local function depotVehicles(depot)
+	local system = api.engine.system and api.engine.system.transportVehicleSystem
+	if not system or not system.getDepotVehicles then return {} end
+	local ok, vehicles = pcall(system.getDepotVehicles, depot)
+	return ok and type(vehicles) == "table" and vehicles or {}
+end
+
+local function lineMatches(lineEntity, operation)
+	local line = component(lineEntity, api.type.ComponentType.LINE)
+	local name = component(lineEntity, api.type.ComponentType.NAME)
+	if not line or not name or name.name ~= (operation.name or "Linha rival")
+		or #(line.stops or {}) ~= 2 then return false end
+	for index, group in ipairs(operation.stops or {}) do
+		local stop = line.stops[index]
+		local selected = operation.selectedStops and operation.selectedStops[index]
+		if not stop or stop.stationGroup ~= group
+			or (selected and (stop.station ~= selected.station or stop.terminal ~= selected.terminal)) then
+			return false
+		end
 	end
 	return true
 end
@@ -538,23 +580,35 @@ local function createLine(player, operation, done)
 	end
 	local name = operation.name or "Linha rival"
 	local color = api.type.Vec3f.new(0.15, 0.55, 0.95)
-	api.cmd.sendCommand(api.cmd.makeLineCreateCmd(name, color, player, line), function(result, success)
-		local lineEntity = result and (result.resultEntity or result.resultLineEntity)
-		if not success or type(lineEntity) ~= "number" then
-			failBuild(operation, "line_creation_failed", done)
-			return
+	local before = {}
+	for _, entity in ipairs(ownedPlayerLines(player)) do before[entity] = true end
+	local sent, sendError = sendNow(api.cmd.makeLineCreateCmd(name, color, player, line))
+	if not sent then
+		local unresolved = copyOperation(operation)
+		unresolved.stage = "command_indeterminate"
+		unresolved.indeterminateCommand = "create_line"
+		unresolved.indeterminateReason = "command_error:" .. tostring(sendError)
+		safeCall(done, true, unresolved, nil)
+		return
+	end
+	local matches = {}
+	for _, entity in ipairs(ownedPlayerLines(player)) do
+		if not before[entity] and isOwnedBy(entity, player) and lineMatches(entity, operation) then
+			matches[#matches + 1] = entity
 		end
-		if not isOwnedBy(lineEntity, player) or not component(lineEntity, api.type.ComponentType.LINE) then
-			local failed = copyOperation(operation)
-			failed.unverifiedCreatedLine = lineEntity
-			failBuild(failed, "created_line_not_owned_or_missing", done)
-			return
-		end
-		local nextOperation = copyOperation(operation)
-		nextOperation.line = lineEntity
-		nextOperation.stage = "buy"
-		safeCall(done, true, nextOperation, nil)
-	end)
+	end
+	if #matches ~= 1 then
+		local unresolved = copyOperation(operation)
+		unresolved.stage = "command_indeterminate"
+		unresolved.indeterminateCommand = "create_line"
+		unresolved.indeterminateReason = #matches == 0 and "line_creation_not_observed" or "created_line_not_unique"
+		safeCall(done, true, unresolved, nil)
+		return
+	end
+	local nextOperation = copyOperation(operation)
+	nextOperation.line = matches[1]
+	nextOperation.stage = "buy"
+	safeCall(done, true, nextOperation, nil)
 end
 
 -- One serialized transition/command per controller update. Preview work is
@@ -562,6 +616,10 @@ end
 function routes.stepBuild(player, operation, done)
 	if type(operation) ~= "table" or type(player) ~= "number" then
 		safeCall(done, false, operation, nil, "build_operation_invalid")
+		return
+	end
+	if operation.stage == "command_indeterminate" then
+		safeCall(done, false, operation, nil, "command_result_indeterminate")
 		return
 	end
 	local gate = routes.readiness()
@@ -625,30 +683,40 @@ function routes.stepBuild(player, operation, done)
 			or type(balance) ~= "number" or balance - candidate.purchaseCost < reserve then
 			failBuild(operation, "vehicle_purchase_exceeds_route_budget", done); return
 		end
-		api.cmd.sendCommand(api.cmd.makeVehicleBuyCmd(player, operation.depot, candidate.config), function(result, success)
-			local vehicle = result and result.resultVehicleEntity
-			if not success or type(vehicle) ~= "number" then failBuild(operation, "vehicle_purchase_failed", done); return end
-			if not vehicleIsOwned(player, vehicle) then
-				local failed = copyOperation(operation)
-				failed.unverifiedCreatedVehicle = vehicle
-				failBuild(failed, "purchased_vehicle_not_owned", done)
-				return
+		local before = {}
+		for _, entity in ipairs(depotVehicles(operation.depot)) do before[entity] = true end
+		local sent, sendError = sendNow(api.cmd.makeVehicleBuyCmd(player, operation.depot, candidate.config))
+		if not sent then
+			local unresolved = copyOperation(operation)
+			unresolved.stage = "command_indeterminate"
+			unresolved.indeterminateCommand = "buy_vehicle"
+			unresolved.indeterminateReason = "command_error:" .. tostring(sendError)
+			safeCall(done, true, unresolved, nil)
+			return
+		end
+		local matches = {}
+		for _, entity in ipairs(depotVehicles(operation.depot)) do
+			if not before[entity] and vehicleIsOwned(player, entity)
+				and component(entity, api.type.ComponentType.TRANSPORT_VEHICLE).depot == operation.depot then
+				matches[#matches + 1] = entity
 			end
-			if component(vehicle, api.type.ComponentType.TRANSPORT_VEHICLE).depot ~= operation.depot then
-				local failed = copyOperation(operation)
-				failed.vehicle = vehicle
-				failBuild(failed, "purchased_vehicle_not_in_expected_depot", done)
-				return
-			end
-			local nextOperation = copyOperation(operation)
-			nextOperation.budget = copyOperation(budget)
-			if type(nextOperation.budget.remaining) == "number" then
-				nextOperation.budget.remaining = math.max(0, nextOperation.budget.remaining - candidate.purchaseCost)
-			end
-			nextOperation.vehicle = vehicle
-			nextOperation.stage = "assign"
-			safeCall(done, true, nextOperation, nil)
-		end)
+		end
+		if #matches ~= 1 then
+			local unresolved = copyOperation(operation)
+			unresolved.stage = "command_indeterminate"
+			unresolved.indeterminateCommand = "buy_vehicle"
+			unresolved.indeterminateReason = #matches == 0 and "purchased_vehicle_not_observed" or "purchased_vehicle_not_unique"
+			safeCall(done, true, unresolved, nil)
+			return
+		end
+		local nextOperation = copyOperation(operation)
+		nextOperation.budget = copyOperation(budget)
+		if type(nextOperation.budget.remaining) == "number" then
+			nextOperation.budget.remaining = math.max(0, nextOperation.budget.remaining - candidate.purchaseCost)
+		end
+		nextOperation.vehicle = matches[1]
+		nextOperation.stage = "assign"
+		safeCall(done, true, nextOperation, nil)
 		return
 	end
 	if operation.stage == "assign" then
@@ -666,12 +734,15 @@ function routes.stepBuild(player, operation, done)
 			failBuild(failed, "purchased_vehicle_not_in_expected_depot", done)
 			return
 		end
-		api.cmd.sendCommand(api.cmd.makeVehicleSetLineCmd(operation.vehicle, operation.line, 0), function(_, success)
-			if not success then failBuild(operation, "vehicle_line_assignment_failed", done); return end
-			local route = { key = operation.key, name = operation.name, line = operation.line,
-				depot = operation.depot, infrastructure = operation.infrastructure or {}, vehicles = 1 }
-			safeCall(done, true, nil, route)
-		end)
+		local sent, sendError = sendNow(api.cmd.makeVehicleSetLineCmd(operation.vehicle, operation.line, 0))
+		local vehicle = component(operation.vehicle, api.type.ComponentType.TRANSPORT_VEHICLE)
+		if not sent or not vehicle or vehicle.line ~= operation.line then
+			failBuild(operation, "vehicle_line_assignment_failed:" .. tostring(sendError or "assignment_not_observed"), done)
+			return
+		end
+		local route = { key = operation.key, name = operation.name, line = operation.line,
+			depot = operation.depot, infrastructure = operation.infrastructure or {}, vehicles = 1 }
+		safeCall(done, true, nil, route)
 		return
 	end
 	if operation.stage == "cleanup" then
@@ -694,13 +765,14 @@ function routes.stepBuild(player, operation, done)
 			safeCall(done, false, operation, nil, "cleanup_vehicle_not_owned")
 			return
 		end
-		api.cmd.sendCommand(api.cmd.makeVehicleSellCmd({ operation.vehicle }), function(_, success)
-			if not success then safeCall(done, false, operation, nil, "cleanup_vehicle_sale_failed"); return end
-			local nextOperation = copyOperation(operation)
-			nextOperation.vehicle = nil
-			nextOperation.stage = nextOperation.line and "cleanup_destroy_line" or "cleanup"
-			safeCall(done, true, nextOperation, nil)
-		end)
+		local sent, err = sendNow(api.cmd.makeVehicleSellCmd({ operation.vehicle }))
+		if not sent or api.engine.entityExists(operation.vehicle) then
+			safeCall(done, false, operation, nil, "cleanup_vehicle_sale_failed:" .. tostring(err or "sale_not_observed")); return
+		end
+		local nextOperation = copyOperation(operation)
+		nextOperation.vehicle = nil
+		nextOperation.stage = nextOperation.line and "cleanup_destroy_line" or "cleanup"
+		safeCall(done, true, nextOperation, nil)
 		return
 	end
 	if operation.stage == "cleanup_destroy_line" then
@@ -708,13 +780,14 @@ function routes.stepBuild(player, operation, done)
 			safeCall(done, false, operation, nil, "cleanup_line_not_owned")
 			return
 		end
-		api.cmd.sendCommand(api.cmd.makeLineDestroyCmd(operation.line), function(_, success)
-			if not success then safeCall(done, false, operation, nil, "cleanup_line_destroy_failed"); return end
-			local nextOperation = copyOperation(operation)
-			nextOperation.line = nil
-			nextOperation.stage = "cleanup"
-			safeCall(done, true, nextOperation, nil)
-		end)
+		local sent, err = sendNow(api.cmd.makeLineDestroyCmd(operation.line))
+		if not sent or component(operation.line, api.type.ComponentType.LINE) then
+			safeCall(done, false, operation, nil, "cleanup_line_destroy_failed:" .. tostring(err or "destroy_not_observed")); return
+		end
+		local nextOperation = copyOperation(operation)
+		nextOperation.line = nil
+		nextOperation.stage = "cleanup"
+		safeCall(done, true, nextOperation, nil)
 		return
 	end
 	if operation.stage == "cleanup_done" then
@@ -757,18 +830,21 @@ local function issueSendToDepot(player, operation, vehicleEntity, done)
 	nextOperation.phase = "wait_sell"
 	nextOperation.vehicle = vehicleEntity
 	local command
-	if vehicle.depot == operation.depot then
+	local sellingNow = vehicle.depot == operation.depot
+	if sellingNow then
 		command = api.cmd.makeVehicleSellCmd({ vehicleEntity })
 	else
 		command = api.cmd.makeVehicleSendToDepotCmd(vehicleEntity, true)
 	end
-	api.cmd.sendCommand(command, function(_, success)
-		if not success then
-			safeCall(done, false, operation, "vehicle_send_to_depot_failed")
-			return
-		end
-		safeCall(done, true, nextOperation, nil)
-	end)
+	local sent, err = sendNow(command)
+	local exists = api.engine.entityExists(vehicleEntity)
+	local validOutcome = sellingNow and not exists
+		or (not sellingNow and exists and vehicleIsOwned(player, vehicleEntity))
+	if not sent or not validOutcome then
+		safeCall(done, false, operation, "vehicle_send_to_depot_failed:" .. tostring(err or "command_outcome_not_observed"))
+		return
+	end
+	safeCall(done, true, nextOperation, nil)
 end
 
 -- Handles one discrete fleet command per controller update. The operation is
@@ -782,6 +858,10 @@ function routes.stepManage(player, operation, done)
 
 	local action = operation.action
 	if action == "buy" then
+		if operation.phase == "purchase_indeterminate" then
+			safeCall(done, false, operation, "purchase_result_indeterminate")
+			return
+		end
 		if operation.phase == "assign" then
 			local vehicleEntity = operation.vehicle
 			if not vehicleIsOwned(player, vehicleEntity)
@@ -794,13 +874,13 @@ function routes.stepManage(player, operation, done)
 				safeCall(done, false, operation, "line_has_fewer_than_two_stops")
 				return
 			end
-			api.cmd.sendCommand(api.cmd.makeVehicleSetLineCmd(vehicleEntity, operation.line, 0), function(_, success)
-				if not success then
-					safeCall(done, false, operation, "vehicle_line_assignment_failed")
-					return
-				end
-				safeCall(done, true, nil, nil)
-			end)
+			local sent, err = sendNow(api.cmd.makeVehicleSetLineCmd(vehicleEntity, operation.line, 0))
+			local assigned = component(vehicleEntity, api.type.ComponentType.TRANSPORT_VEHICLE)
+			if not sent or not assigned or assigned.line ~= operation.line then
+				safeCall(done, false, operation, "vehicle_line_assignment_failed:" .. tostring(err or "assignment_not_observed"))
+				return
+			end
+			safeCall(done, true, nil, nil)
 			return
 		end
 		local native = nativeModule()
@@ -827,30 +907,35 @@ function routes.stepManage(player, operation, done)
 			safeCall(done, false, operation, "insufficient_funds_after_reserve")
 			return
 		end
-		api.cmd.sendCommand(api.cmd.makeVehicleBuyCmd(player, operation.depot, candidate.config), function(result, success)
-			if not success or not result or type(result.resultVehicleEntity) ~= "number" then
-				safeCall(done, false, operation, "vehicle_purchase_failed")
-				return
+		local before = {}
+		for _, entity in ipairs(depotVehicles(operation.depot)) do before[entity] = true end
+		local sent, sendError = sendNow(api.cmd.makeVehicleBuyCmd(player, operation.depot, candidate.config))
+		if not sent then
+			local unresolved = copyOperation(operation)
+			unresolved.phase = "purchase_indeterminate"
+			unresolved.indeterminateReason = "command_error:" .. tostring(sendError)
+			safeCall(done, false, unresolved, "purchase_result_indeterminate")
+			return
+		end
+		local matches = {}
+		for _, entity in ipairs(depotVehicles(operation.depot)) do
+			if not before[entity] and vehicleIsOwned(player, entity)
+				and component(entity, api.type.ComponentType.TRANSPORT_VEHICLE).depot == operation.depot then
+				matches[#matches + 1] = entity
 			end
-			local vehicleEntity = result.resultVehicleEntity
-			if not vehicleIsOwned(player, vehicleEntity) then
-				local failed = copyOperation(operation)
-				failed.unverifiedCreatedVehicle = vehicleEntity
-				safeCall(done, false, failed, "purchased_vehicle_not_owned")
-				return
-			end
-			if component(vehicleEntity, api.type.ComponentType.TRANSPORT_VEHICLE).depot ~= operation.depot then
-				local failed = copyOperation(operation)
-				failed.unverifiedCreatedVehicle = vehicleEntity
-				safeCall(done, false, failed, "purchased_vehicle_not_in_expected_depot")
-				return
-			end
-			local nextOperation = {}
-			for key, value in pairs(operation) do nextOperation[key] = value end
-			nextOperation.phase = "assign"
-			nextOperation.vehicle = vehicleEntity
-			safeCall(done, true, nextOperation, nil)
-		end)
+		end
+		if #matches ~= 1 then
+			local unresolved = copyOperation(operation)
+			unresolved.phase = "purchase_indeterminate"
+			unresolved.indeterminateReason = #matches == 0 and "purchased_vehicle_not_observed" or "purchased_vehicle_not_unique"
+			safeCall(done, false, unresolved, "purchase_result_indeterminate")
+			return
+		end
+		local nextOperation = {}
+		for key, value in pairs(operation) do nextOperation[key] = value end
+		nextOperation.phase = "assign"
+		nextOperation.vehicle = matches[1]
+		safeCall(done, true, nextOperation, nil)
 		return
 	end
 
@@ -896,16 +981,19 @@ function routes.stepManage(player, operation, done)
 			for key, value in pairs(operation) do nextOperation[key] = value end
 			nextOperation.sendQueue = {}
 			for index = 2, #remaining do nextOperation.sendQueue[#nextOperation.sendQueue + 1] = remaining[index] end
-			local command = vehicle.depot == operation.depot
+			local sellingNow = vehicle.depot == operation.depot
+			local command = sellingNow
 				and api.cmd.makeVehicleSellCmd({ vehicleEntity })
 				or api.cmd.makeVehicleSendToDepotCmd(vehicleEntity, true)
-			api.cmd.sendCommand(command, function(_, success)
-				if not success then
-					safeCall(done, false, operation, "vehicle_send_to_depot_failed")
-					return
-				end
-				safeCall(done, true, nextOperation, nil)
-			end)
+			local sent, err = sendNow(command)
+			local exists = api.engine.entityExists(vehicleEntity)
+			local validOutcome = sellingNow and not exists
+				or (not sellingNow and exists and vehicleIsOwned(player, vehicleEntity))
+			if not sent or not validOutcome then
+				safeCall(done, false, operation, "vehicle_send_to_depot_failed:" .. tostring(err or "command_outcome_not_observed"))
+				return
+			end
+			safeCall(done, true, nextOperation, nil)
 			return
 		end
 		if operation.phase == "wait_sell" then
@@ -925,13 +1013,12 @@ function routes.stepManage(player, operation, done)
 				safeCall(done, false, operation, "line_not_owned_for_close")
 				return
 			end
-			api.cmd.sendCommand(api.cmd.makeLineDestroyCmd(operation.line), function(_, success)
-				if not success then
-					safeCall(done, false, operation, "line_destroy_failed")
-					return
-				end
-				safeCall(done, true, nil, nil)
-			end)
+			local sent, err = sendNow(api.cmd.makeLineDestroyCmd(operation.line))
+			if not sent or component(operation.line, api.type.ComponentType.LINE) then
+				safeCall(done, false, operation, "line_destroy_failed:" .. tostring(err or "destroy_not_observed"))
+				return
+			end
+			safeCall(done, true, nil, nil)
 			return
 		end
 
