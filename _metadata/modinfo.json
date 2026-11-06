@@ -1,7 +1,7 @@
 {
     "name": "Empresa concorrente — Viação Horizonte",
     "summary": "Concorrente rodoviária experimental com construção automática e orçamento próprio.",
-    "description": "Mod experimental para partidas livres novas. Empresa de ônibus controlada por script, com verificações de propriedade e finanças e painel Rival. Consulte README.md para o estado da validação.",
+    "description": "Mod experimental para partidas livres novas ou saves existentes. Empresa de ônibus controlada por script, com verificações de propriedade e finanças e painel Rival. Consulte README.md para o estado da validação.",
     "authors": [{"name": "Pichau", "role": "CREATOR"}],
     "tags": ["Script Mod"],
     "url": ""

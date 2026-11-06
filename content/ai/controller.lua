@@ -45,6 +45,29 @@ function controller.create(native, routes, policy)
         end
     end
 
+    -- Single bootstrap path. initNewGame covers new games; update covers the mod
+    -- being enabled on an existing save, where no init event is ever delivered.
+    local function initialize(store)
+        local initialCapital = native.startingCapital and native.startingCapital() or DEFAULT_STARTING_CAPITAL
+        local state = {
+            version = VERSION, companyName = "Viação Horizonte", phase = "create_player",
+            status = "Inicializando", lastDecision = "Preparando empresa rival",
+            initialCapital = initialCapital, routes = {}, blockedCandidates = {}, history = {},
+            initializedAt = native.now(), compatibilityVerified = false,
+        }
+        if type(initialCapital) ~= "number" or initialCapital ~= initialCapital
+            or initialCapital <= 0 or initialCapital == math.huge or initialCapital ~= math.floor(initialCapital) then
+            block(store, state, "Capital inicial da rival inválido")
+        else
+            if store.subscribeToEvent then
+                store:subscribeToEvent("pichauCompetitorPreviewStarted")
+                store:subscribeToEvent("pichauCompetitorPreviewResult")
+            end
+            save(store, state)
+        end
+        return state
+    end
+
     function ret.handleEvent(_, store, _, id, name, payload)
         if id == "pichau_competitor_ai" then
             local state = store:get() or {}
@@ -68,23 +91,7 @@ function controller.create(native, routes, policy)
         if id ~= "" or name ~= "initNewGame" then return end
         local state = store:get() or {}
         if state.version then return end
-        local initialCapital = native.startingCapital and native.startingCapital() or DEFAULT_STARTING_CAPITAL
-        state = {
-            version = VERSION, companyName = "Viação Horizonte", phase = "create_player",
-            status = "Inicializando", lastDecision = "Preparando empresa rival",
-            initialCapital = initialCapital, routes = {}, blockedCandidates = {}, history = {},
-            initializedAt = native.now(), compatibilityVerified = false,
-        }
-        if type(initialCapital) ~= "number" or initialCapital ~= initialCapital
-            or initialCapital <= 0 or initialCapital == math.huge or initialCapital ~= math.floor(initialCapital) then
-            block(store, state, "Capital inicial da rival inválido")
-        else
-            if store.subscribeToEvent then
-                store:subscribeToEvent("pichauCompetitorPreviewStarted")
-                store:subscribeToEvent("pichauCompetitorPreviewResult")
-            end
-            save(store, state)
-        end
+        initialize(store)
     end
 
     local function refresh(state)
@@ -122,8 +129,10 @@ function controller.create(native, routes, policy)
         if not dt or dt <= 0 then return end
         local state = store:get() or {}
         if not state.version then
-            -- A script added to an existing save must not silently create a rival.
-            return
+            -- A script enabled on an existing save never receives initNewGame, so
+            -- bootstrap exactly like a new game instead of staying silently inert.
+            -- initialize() persists the versioned state, keeping this idempotent.
+            state = initialize(store)
         end
         if state.version == 1 then
             state.version = VERSION
