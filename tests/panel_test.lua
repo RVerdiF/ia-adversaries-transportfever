@@ -13,8 +13,10 @@ local gameScriptState = {
 	},
 }
 
-local expandedValue = false
 local registeredRecipe
+local registeredWindow
+local openedWindow
+local closedWindow
 local requestedGameScript
 local requestedComponent
 
@@ -34,6 +36,13 @@ local builtin = {
 	Button = builtinNode("Button"),
 	TextView = builtinNode("TextView"),
 	BoxLayout = builtinNode("BoxLayout"),
+	Window = builtinNode("Window"),
+}
+
+local windowApi = {
+	addSingletonWindow = function(recipe) openedWindow = recipe end,
+	moveSingletonWindowToFront = function(recipe) assert(recipe == openedWindow) end,
+	removeAllWindows = function(recipe) closedWindow = recipe end,
 }
 
 local react = {
@@ -45,15 +54,9 @@ local react = {
 		registeredRecipe = { name = name, recipe = recipe }
 		return recipe
 	end,
-	useState = function()
-		return {
-			old = function()
-				return expandedValue
-			end,
-			set = function(_self, value)
-				expandedValue = value
-			end,
-		}
+	RegisterWrapperRecipe = function(name, _base, recipe)
+		registeredWindow = { name = name, recipe = recipe }
+		return recipe
 	end,
 }
 
@@ -81,6 +84,7 @@ ug_require = function(path)
 	if path == "::/gui/main/builtin.lua" then return builtin end
 	if path == "::/gui/main/engine_react_util.tl" then return engineReactUtil end
 	if path == "::/gui/game_bar/game_bar_widgets.tl" then return gameBarWidgets end
+	if path == "::/gui/main/game_react_globals.tl" then return { getDefaultWindowApi = function() return windowApi end } end
 	if path == "::/scripts/lang_util.tl" then return langUtil end
 	error("unexpected ug_require path: " .. tostring(path))
 end
@@ -134,8 +138,8 @@ local compactTree = panel.CompetitorAIPanel()
 assert(requestedGameScript == "pichau_competitor_ai::/ai/competitor.gs")
 assert(requestedComponent == "GAME_SCRIPT")
 local compactTexts = collectText(compactTree)
-assert(compactTexts[1] == "Rival +", "collapsed panel should show rival toggle")
-assert(#compactTexts == 1, "collapsed panel should stay compact")
+assert(compactTexts[1] == "Rival", "bar should show only the rival button")
+assert(#compactTexts == 1, "details should not appear in the bar")
 
 local toggleButton
 walk(compactTree, function(node)
@@ -144,10 +148,13 @@ end)
 assert(toggleButton and type(toggleButton.onClick) == "function", "button should use native onClick callback")
 toggleButton.onClick()
 
-local expandedTree = panel.CompetitorAIPanel()
-local expandedTexts = collectText(expandedTree)
+assert(registeredWindow and registeredWindow.name == "CompetitorAIWindow")
+assert(openedWindow == registeredWindow.recipe, "button should open the rival window")
+local popup = openedWindow()
+assert(popup.kind == "Window" and popup.closable and popup.movable)
+assert(popup.title == "Empresa rival")
+local expandedTexts = collectText(popup)
 local combined = table.concat(expandedTexts, "\n")
-assert(expandedTexts[1] == "Rival −", "expanded panel should show collapse toggle")
 assert(combined:find("Companhia Teste", 1, true), "company name should be displayed")
 assert(combined:find("Status: ativa", 1, true), "status should be displayed")
 assert(combined:find("Decisão: comprou veículo", 1, true), "last decision should be displayed")
@@ -155,11 +162,20 @@ assert(combined:find("Saldo: $12000", 1, true), "balance should be formatted")
 assert(combined:find("Lucro mensal: Indisponível", 1, true), "nullable profit should display as unavailable")
 assert(combined:find("Linha Linha Azul: 3 veículos", 1, true), "route rows should be displayed")
 assert(combined:find("Linha Linha Verde: 1 veículos", 1, true), "all routes should be displayed")
+popup.onClose()
+assert(closedWindow == openedWindow, "close callback should remove the window")
 
 gameScriptState = nil
-local missingTree = panel.CompetitorAIPanel()
+local missingTree = openedWindow()
 local missingTexts = collectText(missingTree)
 local missingCombined = table.concat(missingTexts, "\n")
 assert(missingCombined:find("Sem dados da empresa rival", 1, true), "missing state should be handled")
+
+gameScriptState = { lastDecision = "Uma mensagem de diagnóstico bastante longa que precisa aparecer em várias linhas para continuar legível na janela do rival" }
+local longTexts = collectText(openedWindow())
+assert(#longTexts > 2, "long decision should wrap into separate rows")
+for _, line in ipairs(longTexts) do
+	assert(#line <= 58, "window line should fit within its intended width")
+end
 
 print("panel mock tests passed")
