@@ -86,11 +86,15 @@ end
 local function isPublicPlainStreet(edgeEntity)
 	local edge = component(edgeEntity, api.type.ComponentType.BASE_EDGE)
 	local street = component(edgeEntity, api.type.ComponentType.BASE_EDGE_STREET)
+	for _, object in ipairs(edge and edge.objects or {}) do
+		local objectEntity = type(object) == "table" and (object[1] or object.entity) or object
+		if type(objectEntity) ~= "number" or component(objectEntity, api.type.ComponentType.PLAYER_OWNED) ~= nil then
+			return false
+		end
+	end
 	if not edge or not street or edge.roadType ~= api.type.enum.RoadType.STREET
 		or edge.type ~= api.type.enum.BaseEdgeType.NORMAL
-		or edge.roadDevelopmentLocked == true
 		or (edge.distance or 0) < 20
-		or #(edge.objects or {}) ~= 0
 		or component(edgeEntity, api.type.ComponentType.PLAYER_OWNED) ~= nil then
 		return false
 	end

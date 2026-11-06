@@ -78,9 +78,19 @@ local function makeStop(player, intent)
 	local id = edgeId(intent.edge)
 	local edge = component(id, api.type.ComponentType.BASE_EDGE)
 	local street = component(id, api.type.ComponentType.BASE_EDGE_STREET)
+	local hasPlayerOwnedObject = false
+	for _, object in ipairs(edge and edge.objects or {}) do
+		local objectEntity = type(object) == "table" and (object[1] or object.entity) or object
+		if type(objectEntity) ~= "number"
+			or component(objectEntity, api.type.ComponentType.PLAYER_OWNED) ~= nil then
+			hasPlayerOwnedObject = true
+			break
+		end
+	end
 	if not edge or not street or edge.roadType ~= api.type.enum.RoadType.STREET
-		or edge.type ~= api.type.enum.BaseEdgeType.NORMAL or edge.roadDevelopmentLocked == true
-		or (edge.distance or 0) < 20 or #(edge.objects or {}) > 0
+		or edge.type ~= api.type.enum.BaseEdgeType.NORMAL
+		or (edge.distance or 0) < 20
+		or hasPlayerOwnedObject
 		or component(id, api.type.ComponentType.PLAYER_OWNED) ~= nil then return nil, "unsafe_stop_edge" end
 	if not edgeCurrent(intent) then return nil, "source_edge_changed" end
 	local asset = stopAsset(api.engine.util.getYear())
@@ -89,6 +99,9 @@ local function makeStop(player, intent)
 		if not allowed then return nil, why or "stop_resource_not_allowed" end
 	end
 	local replacement = api.type.SegmentAndEntity.new()
+	-- Clone the complete municipal edge so existing attached objects and town
+	-- development metadata carry over to the replacement. Preview remains the
+	-- collision gate before the proposal is applied.
 	replacement.entity, replacement.comp, replacement.type, replacement.streetEdge = -1, edge:clone(), 0, street
 	local streetProposal = api.type.SimpleStreetProposal.new()
 	streetProposal.edgesToRemove, streetProposal.edgesToAdd = { id }, { replacement }

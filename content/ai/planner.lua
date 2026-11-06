@@ -119,13 +119,15 @@ end
 function planner.isPublicPlainStreet(entity)
 	local edge = component(entity, "BASE_EDGE")
 	local street = component(entity, "BASE_EDGE_STREET")
+	for _, object in ipairs(edge and edge.objects or {}) do
+		local objectEntity = type(object) == "table" and (object[1] or object.entity) or object
+		if type(objectEntity) ~= "number" or component(objectEntity, "PLAYER_OWNED") ~= nil then return false end
+	end
 	return edge ~= nil and street ~= nil
 		and component(entity, "PLAYER_OWNED") == nil
 		and edge.roadType == api.type.enum.RoadType.STREET
 		and edge.type == api.type.enum.BaseEdgeType.NORMAL
-		and edge.roadDevelopmentLocked ~= true
 		and finite(edge.distance) and edge.distance >= 20
-		and type(edge.objects) == "table" and #edge.objects == 0
 end
 
 local function nodeIdsNear(position, radius)
