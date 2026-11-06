@@ -106,12 +106,12 @@ end
 -- Town district centers can be several blocks away from a usable public road.
 -- Expand only when the smaller search found no safe segment, keeping stops
 -- close to town whenever a nearby candidate exists.
-local function nearbySafeRoads(center, player, initialRadius)
+local function nearbySafeRoads(center, player, initialRadius, maximumRadius)
 	local radius = finite(initialRadius) and initialRadius > 0 and initialRadius or 250
-	local maxRadius = math.max(radius, 1500)
+	local maxRadius = math.max(radius, finite(maximumRadius) and maximumRadius or 3000)
 	while true do
 		local result = roadEdges(center, player, radius)
-		if #result > 0 or radius >= maxRadius then return result end
+		if #result > 0 or radius >= maxRadius then return result, radius end
 		radius = math.min(radius * 2, maxRadius)
 	end
 end
@@ -282,7 +282,7 @@ local function collectPairs(allTowns)
 		for j = i + 1, #allTowns do
 			local a, b = allTowns[i], allTowns[j]
 			local dist = math.sqrt(distance2(a.center, b.center))
-			if dist >= 500 then
+			if dist >= 250 then
 				local first, second = a.entity, b.entity
 				if first > second then first, second = second, first end
 				pairs[#pairs + 1] = {
@@ -308,14 +308,17 @@ end
 
 local function depotForTown(town, stopA, stopB, player, opts, pathBudget, nodeToEdges)
 	local radius = opts.depotSearchRadius or 750
-	local candidates = roadEdges(town.center, player, radius)
+	local candidates
+	candidates, radius = nearbySafeRoads(town.center, player, radius, opts.maxDepotSearchRadius or 2500)
 	local best, bestDistance
 	local testedTerminals = 0
 	for _, candidate in ipairs(candidates) do
 		local edge = candidate.data
 		for _, node in ipairs({ edge.node0, edge.node1 }) do
 			local incident = nodeToEdges[node] or {}
-			if #incident == 1 then
+			-- Allow junction endpoints as well as dead ends. The construction
+			-- preview checks collisions before any depot proposal is applied.
+			if #incident > 0 then
 				local position, outX, outY = endpointOutward(edge, node)
 				if position then
 					local d2 = distance2(position, town.center)
@@ -348,8 +351,9 @@ end
 
 local function candidateFor(pair, player, opts, pathBudget, nodeToEdges)
 	local radius = opts.stopSearchRadius or 250
-	local roadsA = nearbySafeRoads(pair.a.center, player, radius)
-	local roadsB = nearbySafeRoads(pair.b.center, player, radius)
+	local maxStopRadius = opts.maxStopSearchRadius or 3000
+	local roadsA = nearbySafeRoads(pair.a.center, player, radius, maxStopRadius)
+	local roadsB = nearbySafeRoads(pair.b.center, player, radius, maxStopRadius)
 	if #roadsA == 0 or #roadsB == 0 then return nil, "no_safe_stop_road" end
 	local a, b
 	local pathReason
